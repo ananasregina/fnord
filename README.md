@@ -28,6 +28,17 @@ Interactive fnord browsing and editing with Textual:
 - Real-time database sync
 - Launch with `fnord tui`
 
+### 🌐 Web Interface (NEW!)
+Modern web interface built with FastAPI + HTMX:
+- Beautiful, responsive UI
+- Create, View, Edit, Delete fnords
+- Real-time search as you type
+- Multiline editing for summary and notes
+- Pagination for browsing large collections
+- Works in any modern browser
+- No JavaScript required - pure Python!
+- Launch with `fnord web` or `python -m fnord.web`
+
 ## Installation
 
 ```bash
@@ -42,29 +53,37 @@ pip install -e ".[dev]"
 
 ## Quick Start
 
+### TUI Mode (CLI)
 ```bash
 # Initialize fnord tracker (creates fnord.db if needed)
 fnord count
 
 # Ingest a fnord sighting
 fnord ingest \
-  --when "2026-01-07T14:23:00Z" \
-  --source "News Article" \
-  --summary "Found fnord hidden in tech news" \
-  --where-place-name "Seattle, WA" \
-  --notes '{"url": "https://example.com", "author": "Unknown"}'
+   --when "2026-01-07T14:23:00Z" \
+   --source "News Article" \
+   --summary "Found fnord hidden in tech news" \
+   --where-place-name "Seattle, WA" \
+   --notes '{"url": "https://example.com", "author": "Unknown"}'
 
 # Check the sacred count
 fnord count
 
 # List all fnords
 fnord list
+```
 
-# Launch interactive TUI
-fnord tui
+### Web Interface (NEW!)
+```bash
+# Launch web server
+fnord web
 
-# Start MCP server for AI agents
-fnord --mcp
+# Or run directly with uvicorn
+python -m fnord.web
+
+# Visit in browser
+open http://localhost:8000
+```
 ```
 
 ## Data Model

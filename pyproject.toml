@@ -11,7 +11,7 @@ license = {text = "WTFPL - Do What The Fuck You Want To Public License"}
 authors = [
     {name = "The Fnord Keepers", email = "fnord@eris.garden"}
 ]
-keywords = ["fnord", "discordian", "illuminatus", "tracker", "mcp", "cli", "tui"]
+keywords = ["fnord", "discordian", "illuminatus", "tracker", "mcp", "cli", "tui", "web"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: End Users/Desktop",
@@ -35,6 +35,10 @@ dependencies = [
 
     # Dotenv for config (23 config locations)
     "python-dotenv>=1.0.0",
+
+    # Web framework for modern UI (fnords deserve cool web interface)
+    "fastapi>=0.100.0",
+    "jinja2>=3.1.0",
 ]
 
 [project.optional-dependencies]

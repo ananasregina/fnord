@@ -6,8 +6,7 @@ The fnords deserve a beautiful interface. We test its parts.
 Note: TUI testing is complex; these tests focus on core logic.
 """
 
-import pytest
-from fnord.database import ingest_fnord, get_all_fnords
+from fnord.database import get_all_fnords, ingest_fnord
 from fnord.models import FnordSighting
 
 
@@ -86,7 +85,7 @@ class TestTUILogic:
 
     def test_tui_edit_flow(self, initialized_db):
         """Test the edit flow that TUI would use."""
-        from fnord.database import update_fnord, get_fnord_by_id
+        from fnord.database import get_fnord_by_id, update_fnord
 
         # Create a fnord
         fnord = FnordSighting(

@@ -157,10 +157,8 @@ def web(
     print()
 
     try:
-        # Import FastAPI app inline to avoid module loading issues
-        from fnord.web.app import app
         uvicorn.run(
-            app,
+            "fnord.web.app:app",
             host="127.0.0.1",
             port=web_port,
             reload=True,

@@ -158,6 +158,14 @@ class DetailScreen(Screen):
                 placeholder="Describe the fnord...",
                 id="summary_input",
             )
+            yield Label("Logical Fallacies (JSON array):")
+            yield TextArea(
+                json.dumps(self.fnord.logical_fallacies, indent=2)
+                if self.fnord.logical_fallacies
+                else "",
+                placeholder='["ad hominem", "straw man"]',
+                id="logical_fallacies_input",
+            )
             yield Label("Notes (JSON):")
             yield TextArea(
                 json.dumps(self.fnord.notes, indent=2) if self.fnord.notes else "",
@@ -199,7 +207,23 @@ class DetailScreen(Screen):
             place = self.query_one("#place_input", Input).value
             source = self.query_one("#source_input", Input).value
             summary = self.query_one("#summary_input", TextArea).text
+            logical_fallacies_str = self.query_one("#logical_fallacies_input", TextArea).text
             notes_str = self.query_one("#notes_input", TextArea).text
+
+            logical_fallacies = None
+            if logical_fallacies_str.strip():
+                try:
+                    parsed = json.loads(logical_fallacies_str)
+                    if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
+                        logical_fallacies = parsed
+                    else:
+                        self.app.notify(
+                            "Logical fallacies must be a JSON array of strings!", severity="error"
+                        )
+                        return
+                except json.JSONDecodeError:
+                    self.app.notify("Invalid JSON in logical fallacies!", severity="error")
+                    return
 
             notes = None
             if notes_str.strip():
@@ -213,6 +237,7 @@ class DetailScreen(Screen):
             self.fnord.where_place_name = place if place else None
             self.fnord.source = source
             self.fnord.summary = summary
+            self.fnord.logical_fallacies = logical_fallacies
             self.fnord.notes = notes
 
             update_fnord(self.fnord)
@@ -257,6 +282,9 @@ class AddEditScreen(ModalScreen):
         width: 1fr;
     }
     #summary_input {
+        min-height: 3;
+    }
+    #logical_fallacies_input {
         min-height: 3;
     }
     #notes_input {
@@ -313,6 +341,11 @@ class AddEditScreen(ModalScreen):
                 placeholder="Describe the fnord...",
                 id="summary_input",
             )
+            yield Label("Logical Fallacies (JSON array):")
+            yield TextArea(
+                placeholder='["ad hominem", "straw man"]',
+                id="logical_fallacies_input",
+            )
             yield Label("Notes (JSON):")
             yield TextArea(
                 placeholder='{"url": "...", "author": "..."}',
@@ -345,7 +378,23 @@ class AddEditScreen(ModalScreen):
             place = self.query_one("#place_input", Input).value
             source = self.query_one("#source_input", Input).value
             summary = self.query_one("#summary_input", TextArea).text
+            logical_fallacies_str = self.query_one("#logical_fallacies_input", TextArea).text
             notes_str = self.query_one("#notes_input", TextArea).text
+
+            logical_fallacies = None
+            if logical_fallacies_str.strip():
+                try:
+                    parsed = json.loads(logical_fallacies_str)
+                    if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
+                        logical_fallacies = parsed
+                    else:
+                        self.app.notify(
+                            "Logical fallacies must be a JSON array of strings!", severity="error"
+                        )
+                        return
+                except json.JSONDecodeError:
+                    self.app.notify("Invalid JSON in logical fallacies!", severity="error")
+                    return
 
             notes = None
             if notes_str.strip():
@@ -361,6 +410,7 @@ class AddEditScreen(ModalScreen):
                 source=source,
                 summary=summary,
                 notes=notes,
+                logical_fallacies=logical_fallacies,
             )
 
             result = ingest_fnord(fnord)

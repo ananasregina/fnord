@@ -25,6 +25,7 @@ class FnordSighting:
         source: Where the fnord was found (News, Walk, Code, Dream, etc.)
         summary: Brief description of the fnord sighting
         notes: Optional JSON-serializable dict for additional metadata
+        logical_fallacies: Optional list of logical fallacy names (e.g., ["ad hominem"])
     """
 
     # Database fields
@@ -44,6 +45,9 @@ class FnordSighting:
 
     # Additional notes (JSON blob)
     notes: Optional[dict[str, Any]] = None
+
+    # List of logical fallacies (JSON array)
+    logical_fallacies: Optional[list[str]] = None
 
     def to_dict(self) -> dict[str, Any]:
         """
@@ -83,9 +87,7 @@ class FnordSighting:
             try:
                 datetime.fromisoformat(self.when.replace("Z", "+00:00"))
             except ValueError:
-                errors.append(
-                    "when: Must be in ISO8601 format (e.g., 2026-01-07T14:23:00Z)"
-                )
+                errors.append("when: Must be in ISO8601 format (e.g., 2026-01-07T14:23:00Z)")
 
         # source is required
         if not self.source:
@@ -93,9 +95,7 @@ class FnordSighting:
 
         # summary is required
         if not self.summary:
-            errors.append(
-                "summary: This field is required (describe the fnord! what did it do?)"
-            )
+            errors.append("summary: This field is required (describe the fnord! what did it do?)")
 
         # Validate notes is JSON-serializable if present
         if self.notes is not None:

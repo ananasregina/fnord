@@ -28,7 +28,7 @@ class TestMCPServer:
 
         tools = server.list_tools()
 
-        assert len(tools) == 6  # Six sacred operations
+        assert len(tools) == 7  # Seven sacred operations (6 + search_fnords)
 
         tool_names = [tool.name for tool in tools]
         assert "query_fnord_count" in tool_names
@@ -141,7 +141,7 @@ class TestMCPCallTool:
             fnord = FnordSighting(
                 when="2026-01-07T14:23:00Z",
                 source="Test",
-                summary=f"Fnord #{i+1}",
+                summary=f"Fnord #{i + 1}",
             )
             ingest_fnord(fnord)
 
@@ -246,7 +246,7 @@ class TestMCPCallTool:
             fnord = FnordSighting(
                 when="2026-01-07T14:23:00Z",
                 source="Test",
-                summary=f"Fnord #{i+1}",
+                summary=f"Fnord #{i + 1}",
             )
             ingest_fnord(fnord)
 
@@ -265,7 +265,7 @@ class TestMCPCallTool:
             fnord = FnordSighting(
                 when="2026-01-07T14:23:00Z",
                 source="Test",
-                summary=f"Fnord #{i+1}",
+                summary=f"Fnord #{i + 1}",
             )
             ingest_fnord(fnord)
 
@@ -284,7 +284,7 @@ class TestMCPCallTool:
             fnord = FnordSighting(
                 when="2026-01-07T14:23:00Z",
                 source="Test",
-                summary=f"Fnord #{i+1}",
+                summary=f"Fnord #{i + 1}",
             )
             ingest_fnord(fnord)
 
@@ -459,6 +459,7 @@ class TestMCPServerIntegration:
         # Update it
         # Get ID from list result
         import json
+
         list_data = json.loads(results[0].text.split("\n")[1])
         fnord_id = list_data[0]["id"]
 

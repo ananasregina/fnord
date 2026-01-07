@@ -58,7 +58,7 @@ async def index(request: Request, page: int = 1, search: Optional[str] = None):
             "total_pages": total_pages,
             "search_query": search or "",
             "total_count": total_count,
-        }
+        },
     )
 
 
@@ -84,7 +84,7 @@ async def detail(request: Request, fnord_id: int):
             "request": request,
             "fnord": fnord,
             "is_new": False,
-        }
+        },
     )
 
 
@@ -101,7 +101,7 @@ async def new_fnord(request: Request):
             "request": request,
             "fnord": None,
             "is_new": True,
-        }
+        },
     )
 
 
@@ -113,6 +113,7 @@ async def update_fnord_route(
     where_place_name: Optional[str] = Form(None),
     source: str = Form(...),
     summary: str = Form(...),
+    logical_fallacies: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
 ):
     """
@@ -129,6 +130,16 @@ async def update_fnord_route(
     if not fnord:
         raise HTTPException(status_code=404, detail="Fnord not found!")
 
+    # Parse logical_fallacies if provided
+    logical_fallacies_list = None
+    if logical_fallacies and logical_fallacies.strip():
+        try:
+            parsed = json.loads(logical_fallacies)
+            if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
+                logical_fallacies_list = parsed
+        except json.JSONDecodeError:
+            pass
+
     # Parse notes if provided
     notes_dict = None
     if notes and notes.strip():
@@ -142,6 +153,7 @@ async def update_fnord_route(
     fnord.where_place_name = where_place_name if where_place_name else None
     fnord.source = source
     fnord.summary = summary
+    fnord.logical_fallacies = logical_fallacies_list
     fnord.notes = notes_dict
 
     update_fnord_db(fnord)
@@ -157,6 +169,7 @@ async def create_fnord(
     where_place_name: Optional[str] = Form(None),
     source: str = Form(...),
     summary: str = Form(...),
+    logical_fallacies: Optional[str] = Form(None),
     notes: Optional[str] = Form(None),
 ):
     """
@@ -164,6 +177,16 @@ async def create_fnord(
 
     A new fnord enters the realm.
     """
+    # Parse logical_fallacies if provided
+    logical_fallacies_list = None
+    if logical_fallacies and logical_fallacies.strip():
+        try:
+            parsed = json.loads(logical_fallacies)
+            if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
+                logical_fallacies_list = parsed
+        except json.JSONDecodeError:
+            pass
+
     # Parse notes if provided
     notes_dict = None
     if notes and notes.strip():
@@ -178,6 +201,7 @@ async def create_fnord(
         where_place_name=where_place_name if where_place_name else None,
         source=source,
         summary=summary,
+        logical_fallacies=logical_fallacies_list,
         notes=notes_dict,
     )
 

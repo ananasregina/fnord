@@ -53,6 +53,7 @@ def init_db() -> None:
     Initialize the fnord database schema.
 
     Creates the fnords table if it doesn't exist.
+    Adds new columns if they don't exist (for migrations).
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -77,6 +78,14 @@ def init_db() -> None:
         # The fnords appreciate speed
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_fnords_when ON fnords("when")')
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_fnords_source ON fnords(source)")
+
+        # Migration: Add logical_fallacies column if it doesn't exist
+        cursor.execute("PRAGMA table_info(fnords)")
+        columns = {row[1] for row in cursor.fetchall()}
+
+        if "logical_fallacies" not in columns:
+            cursor.execute("ALTER TABLE fnords ADD COLUMN logical_fallacies TEXT")
+            logger.info("Added logical_fallacies column to fnords table")
 
         conn.commit()
 
@@ -111,13 +120,25 @@ def ingest_fnord(fnord: FnordSighting) -> FnordSighting:
         if fnord.notes:
             notes_json = json.dumps(fnord.notes)
 
+        # Convert logical_fallacies to JSON string if present
+        logical_fallacies_json = None
+        if fnord.logical_fallacies:
+            logical_fallacies_json = json.dumps(fnord.logical_fallacies)
+
         # Insert the fnord
         cursor.execute(
             """
-            INSERT INTO fnords ("when", where_place_name, source, summary, notes)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO fnords ("when", where_place_name, source, summary, notes, logical_fallacies)
+            VALUES (?, ?, ?, ?, ?, ?)
         """,
-            (fnord.when, fnord.where_place_name, fnord.source, fnord.summary, notes_json),
+            (
+                fnord.when,
+                fnord.where_place_name,
+                fnord.source,
+                fnord.summary,
+                notes_json,
+                logical_fallacies_json,
+            ),
         )
 
         # Get the assigned ID
@@ -233,15 +254,28 @@ def update_fnord(fnord: FnordSighting) -> FnordSighting:
         if fnord.notes:
             notes_json = json.dumps(fnord.notes)
 
+        # Convert logical_fallacies to JSON string if present
+        logical_fallacies_json = None
+        if fnord.logical_fallacies:
+            logical_fallacies_json = json.dumps(fnord.logical_fallacies)
+
         # Update the fnord
         cursor.execute(
             """
             UPDATE fnords
             SET "when" = ?, where_place_name = ?, source = ?,
-                summary = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+                summary = ?, notes = ?, logical_fallacies = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         """,
-            (fnord.when, fnord.where_place_name, fnord.source, fnord.summary, notes_json, fnord.id),
+            (
+                fnord.when,
+                fnord.where_place_name,
+                fnord.source,
+                fnord.summary,
+                notes_json,
+                logical_fallacies_json,
+                fnord.id,
+            ),
         )
 
         conn.commit()
@@ -333,6 +367,18 @@ def _row_to_fnord(row: sqlite3.Row) -> FnordSighting:
         except json.JSONDecodeError:
             notes = None
 
+    # Parse logical_fallacies JSON
+    logical_fallacies = None
+    try:
+        logical_fallacies_data = row["logical_fallacies"]
+        if logical_fallacies_data:
+            parsed = json.loads(logical_fallacies_data)
+            # Validate it's a list of strings
+            if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
+                logical_fallacies = parsed
+    except (KeyError, json.JSONDecodeError):
+        logical_fallacies = None
+
     return FnordSighting(
         id=row["id"],
         when=row["when"],
@@ -340,4 +386,5 @@ def _row_to_fnord(row: sqlite3.Row) -> FnordSighting:
         source=row["source"],
         summary=row["summary"],
         notes=notes,
+        logical_fallacies=logical_fallacies,
     )

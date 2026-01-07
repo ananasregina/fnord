@@ -70,7 +70,7 @@ def _register_tools():
             ),
             Tool(
                 name="ingest_fnord",
-                description="""Ingest a new fnord sighting into the sacred database. Required fields: when (ISO8601 datetime), source (where it was found), summary (description). Optional fields: where_place_name (location description), notes (JSON dict with additional metadata). Example: {"when": "2026-01-07T14:23:00Z", "source": "News", "summary": "Found fnord hidden in article", "where_place_name": "Seattle", "notes": {"url": "https://example.com"}}""",
+                description="Ingest a new fnord sighting into the sacred database. Required fields: when (ISO8601 datetime), source (where it was found), summary (description). Optional fields: where_place_name (location description), logical_fallacies (JSON array of logical fallacy names), notes (JSON dict with additional metadata).",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -80,7 +80,7 @@ def _register_tools():
                         },
                         "where_place_name": {
                             "type": "string",
-                            "description": "Location description (e.g., Seattle, WA or 'my dreams')",
+                            "description": "Location description (e.g., Seattle, WA or my dreams)",
                         },
                         "source": {
                             "type": "string",
@@ -90,9 +90,13 @@ def _register_tools():
                             "type": "string",
                             "description": "Brief description of the fnord sighting - what did you see?",
                         },
+                        "logical_fallacies": {
+                            "type": "string",
+                            "description": "Logical fallacies as JSON array string (e.g., [ad hominem, straw man])",
+                        },
                         "notes": {
                             "type": "string",
-                            "description": """Additional metadata as JSON string (e.g., {"url": "https://example.com", "author": "Unknown"})""",
+                            "description": "Additional metadata as JSON string (e.g., url and author)",
                         },
                     },
                     "required": ["when", "source", "summary"],
@@ -132,7 +136,7 @@ def _register_tools():
             ),
             Tool(
                 name="update_fnord",
-                description="""Update an existing fnord sighting. Supports partial updates - only provide the fields you want to change. Required: id (the fnord's database ID). Optional: when, where_place_name, source, summary, notes. Example: {"id": 1, "summary": "Updated summary"}""",
+                description="Update an existing fnord sighting. Supports partial updates - only provide the fields you want to change. Required: id (the fnords database ID). Optional: when, where_place_name, source, summary, logical_fallacies, notes.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -155,6 +159,10 @@ def _register_tools():
                         "summary": {
                             "type": "string",
                             "description": "Brief description of the fnord sighting",
+                        },
+                        "logical_fallacies": {
+                            "type": "string",
+                            "description": "Logical fallacies as JSON array string (e.g., [ad hominem, straw man])",
                         },
                         "notes": {
                             "type": "string",
@@ -279,7 +287,7 @@ async def _handle_ingest_fnord(arguments: dict[str, Any]) -> list[TextContent]:
     Handle ingest_fnord tool.
 
     Args:
-        arguments: Tool arguments (when, where_place_name, source, summary, notes)
+        arguments: Tool arguments (when, where_place_name, source, summary, logical_fallacies, notes)
 
     Returns:
         list[TextContent]: Result of fnord ingestion
@@ -290,7 +298,20 @@ async def _handle_ingest_fnord(arguments: dict[str, Any]) -> list[TextContent]:
         where_place_name = arguments.get("where_place_name")
         source = arguments.get("source", "")
         summary = arguments.get("summary", "")
+        logical_fallacies_json = arguments.get("logical_fallacies")
         notes_json = arguments.get("notes")
+
+        # Parse logical_fallacies JSON
+        logical_fallacies_list = None
+        if logical_fallacies_json:
+            import json
+
+            try:
+                parsed = json.loads(logical_fallacies_json)
+                if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
+                    logical_fallacies_list = parsed
+            except json.JSONDecodeError:
+                pass
 
         # Parse notes JSON
         notes_dict = None
@@ -313,6 +334,7 @@ async def _handle_ingest_fnord(arguments: dict[str, Any]) -> list[TextContent]:
             where_place_name=where_place_name,
             source=source,
             summary=summary,
+            logical_fallacies=logical_fallacies_list,
             notes=notes_dict,
         )
 
@@ -385,7 +407,7 @@ async def _handle_update_fnord(arguments: dict[str, Any]) -> list[TextContent]:
     Handle update_fnord tool.
 
     Args:
-        arguments: Tool arguments (id, and optional: when, where_place_name, source, summary, notes)
+        arguments: Tool arguments (id, and optional: when, where_place_name, source, summary, logical_fallacies, notes)
 
     Returns:
         list[TextContent]: Updated fnord or error message
@@ -401,7 +423,19 @@ async def _handle_update_fnord(arguments: dict[str, Any]) -> list[TextContent]:
     existing = get_fnord_by_id(fnord_id)
 
     if existing is None:
-        return [TextContent(type="text", text=f"Fnord with ID {fnord_id} not found. Cannot update.")]
+        return [
+            TextContent(type="text", text=f"Fnord with ID {fnord_id} not found. Cannot update.")
+        ]
+
+    # Parse logical_fallacies JSON if provided
+    logical_fallacies_list = None
+    if logical_fallacies_json := arguments.get("logical_fallacies"):
+        try:
+            parsed = json.loads(logical_fallacies_json)
+            if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
+                logical_fallacies_list = parsed
+        except json.JSONDecodeError:
+            pass
 
     # Parse notes JSON if provided
     notes_dict = None
@@ -425,6 +459,8 @@ async def _handle_update_fnord(arguments: dict[str, Any]) -> list[TextContent]:
         existing.source = arguments["source"]
     if "summary" in arguments:
         existing.summary = arguments["summary"]
+    if logical_fallacies_list is not None:
+        existing.logical_fallacies = logical_fallacies_list
     if notes_dict is not None:
         existing.notes = notes_dict
 
@@ -454,7 +490,9 @@ async def _handle_delete_fnord(arguments: dict[str, Any]) -> list[TextContent]:
     deleted = delete_fnord(fnord_id)
 
     if deleted:
-        message = f"Fnord {fnord_id} deleted! It has vanished into the void. The fnords are pleased."
+        message = (
+            f"Fnord {fnord_id} deleted! It has vanished into the void. The fnords are pleased."
+        )
     else:
         message = f"Fnord {fnord_id} not found. Nothing to delete."
 
@@ -484,7 +522,9 @@ async def _handle_search_fnords(arguments: dict[str, Any]) -> list[TextContent]:
     # Convert to JSON array
     fnords_json = [f.to_dict() for f in fnords]
 
-    message = f"Found {len(fnords)} fnord(s) matching '{query}':\n{json.dumps(fnords_json, indent=2)}"
+    message = (
+        f"Found {len(fnords)} fnord(s) matching '{query}':\n{json.dumps(fnords_json, indent=2)}"
+    )
 
     return [TextContent(type="text", text=message)]
 

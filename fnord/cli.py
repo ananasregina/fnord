@@ -51,12 +51,18 @@ def ingest(
     notes: Optional[str] = typer.Option(
         None, "--notes", "-n", help="Additional metadata as JSON string"
     ),
+    logical_fallacies: Optional[str] = typer.Option(
+        None,
+        "--logical-fallacies",
+        "-f",
+        help='Logical fallacies as JSON array string (e.g., \'["ad hominem", "straw man"]\')',
+    ),
 ):
     """
     Ingest a fnord sighting into the sacred database.
 
     Example:
-        fnord ingest --source "News" --summary "Found fnord in article" --notes '{"url": "..."}'
+        fnord ingest --source "News" --summary "Found fnord in article" --notes '{"url": "..."}' --logical-fallacies '["ad hominem"]'
     """
     try:
         # Parse notes JSON
@@ -68,6 +74,22 @@ def ingest(
                 typer.echo(f"Error: Invalid JSON in notes: {e}", err=True)
                 raise typer.Exit(1)
 
+        # Parse logical_fallacies JSON
+        logical_fallacies_list = None
+        if logical_fallacies:
+            try:
+                parsed = json.loads(logical_fallacies)
+                if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
+                    logical_fallacies_list = parsed
+                else:
+                    typer.echo(
+                        f"Error: logical_fallacies must be a JSON array of strings", err=True
+                    )
+                    raise typer.Exit(1)
+            except json.JSONDecodeError as e:
+                typer.echo(f"Error: Invalid JSON in logical_fallacies: {e}", err=True)
+                raise typer.Exit(1)
+
         # Create the fnord sighting
         fnord = FnordSighting(
             when=when,
@@ -75,6 +97,7 @@ def ingest(
             source=source,
             summary=summary,
             notes=notes_dict,
+            logical_fallacies=logical_fallacies_list,
         )
 
         # Initialize database and ingest
@@ -110,9 +133,7 @@ def count():
         elif total == 1:
             typer.echo("There is 1 fnord in the database. The fnord is watching.")
         elif total == 23:
-            typer.echo(
-                f"There are {total} fnords in the database. A sacred number! All hail Eris!"
-            )
+            typer.echo(f"There are {total} fnords in the database. A sacred number! All hail Eris!")
         else:
             typer.echo(f"There are {total} fnords in the database.")
 
@@ -210,8 +231,15 @@ def list(
                 where = fnord.where_place_name or "Unknown location"
 
                 notes_str = f" [notes: {json.dumps(fnord.notes)}]" if fnord.notes else ""
+                fallacies_str = (
+                    f" [fallacies: {', '.join(fnord.logical_fallacies)}]"
+                    if fnord.logical_fallacies
+                    else ""
+                )
 
-                typer.echo(f"ID {fnord.id}: [{fnord.when}] {fnord.source}: {fnord.summary} @ {where}{notes_str}")
+                typer.echo(
+                    f"ID {fnord.id}: [{fnord.when}] {fnord.source}: {fnord.summary} @ {where}{notes_str}{fallacies_str}"
+                )
 
             typer.echo(f"\nTotal: {len(fnords)} fnord(s)")
 

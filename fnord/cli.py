@@ -123,6 +123,56 @@ def count():
 
 
 @app.command()
+def web(
+    port: int = typer.Option(
+        8000,
+        "--port",
+        "-p",
+        help="Port for web server (default: 8000, overrides FNORD_WEB_PORT env var)",
+    ),
+):
+    """
+    Launch web interface for fnord tracking.
+
+    FastAPI + HTMX web interface. The fnords deserve a modern home.
+
+    Example:
+        fnord web --port 8080
+
+    Environment:
+        Set FNORD_WEB_PORT to override default port.
+    """
+    import uvicorn
+
+    from fnord.config import get_config
+    from fnord.web.app import app as web_app
+
+    config = get_config()
+    web_port = config.get_web_port()
+
+    print(f"🍎 Starting Fnord Tracker Web Server... 🍎")
+    print(f"Open http://localhost:{web_port} in your browser")
+    print(f"Port: {web_port} (set via FNORD_WEB_PORT env var)")
+    print()
+    print("Press Ctrl+C to stop the server")
+    print()
+
+    try:
+        uvicorn.run(
+            web_app.app,
+            host="127.0.0.1",
+            port=web_port,
+            reload=True,
+        )
+    except KeyboardInterrupt:
+        print("\n👋 Server stopped. The fnords await your return.")
+        raise typer.Exit(0)
+    except Exception as e:
+        typer.echo(f"Error starting web server: {e}", err=True)
+        raise typer.Exit(1)
+
+
+@app.command()
 def list(
     limit: Optional[int] = typer.Option(
         None,

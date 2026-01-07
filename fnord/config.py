@@ -115,6 +115,17 @@ class Config:
         """
         return os.getenv("FNORD_MCP_VERSION", "23.5.0")
 
+    def get_web_port(self) -> int:
+        """
+        Get the web server port.
+
+        The fnords need a door to the outside world.
+
+        Returns:
+            int: Web server port number
+        """
+        return int(os.getenv("FNORD_WEB_PORT", "8000"))
+
     def get_log_level(self) -> str:
         """
         Get the log level.

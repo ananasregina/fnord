@@ -49,8 +49,7 @@
                                            required
                                            class="form-input w-full px-4 py-2 border rounded-lg">
                                 </div>
-                            
-                            <div>
+                                
                                 <div class="mb-4">
                                     <label for="where_place_name" class="block text-sm font-medium text-gray-700 mb-1">Place</label>
                                     <input type="text" 
@@ -60,37 +59,35 @@
                                            class="form-input w-full px-4 py-2 border rounded-lg">
                                 </div>
                                 
-                                <div>
-                                    <div class="mb-4">
-                                        <label for="source" class="block text-sm font-medium text-gray-700 mb-1">Source *</label>
-                                        <input type="text" 
-                                               id="source"
-                                               name="source"
-                                               value="{{ fnord.source if fnord else '' }}"
-                                               required
-                                               class="form-input w-full px-4 py-2 border rounded-lg">
-                                    </div>
+                                <div class="mb-4">
+                                    <label for="source" class="block text-sm font-medium text-gray-700 mb-1">Source *</label>
+                                    <input type="text" 
+                                           id="source"
+                                           name="source"
+                                           value="{{ fnord.source if fnord else '' }}"
+                                           required
+                                           class="form-input w-full px-4 py-2 border rounded-lg">
                                 </div>
                             </div>
-                            
-                            <div>
-                                <label for="summary" class="block text-lg font-bold text-gray-700 mb-2">Summary *</label>
-                                <textarea id="summary"
-                                          name="summary"
-                                          rows="12"
-                                          required
-                                          class="form-input w-full px-4 py-3 border rounded-lg text-lg">{{ fnord.summary if fnord else '' }}</textarea>
-                            </div>
-                            
-                            <div>
-                                <label for="notes" class="block text-lg font-bold text-gray-700 mb-2">Notes (JSON)</label>
-                                <textarea id="notes"
-                                          name="notes"
-                                          rows="30"
-                                          placeholder='{"url": "...", "author": "..."}'
-                                          class="form-input w-full px-4 py-3 border rounded-lg text-lg font-mono">{{ fnord.notes | tojson(indent=2) if fnord else '' }}</textarea>
-                                <p class="text-xs text-gray-500 mt-1">Must be valid JSON</p>
-                            </div>
+                        </div>
+                        
+                        <div>
+                            <label for="summary" class="block text-lg font-bold text-gray-700 mb-2">Summary *</label>
+                            <textarea id="summary"
+                                      name="summary"
+                                      rows="12"
+                                      required
+                                      class="form-input w-full px-4 py-3 border rounded-lg text-lg">{{ fnord.summary if fnord else '' }}</textarea>
+                        </div>
+                        
+                        <div>
+                            <label for="notes" class="block text-lg font-bold text-gray-700 mb-2">Notes (JSON)</label>
+                            <textarea id="notes"
+                                      name="notes"
+                                      rows="30"
+                                      placeholder='{"url": "...", "author": "..."}'
+                                      class="form-input w-full px-4 py-3 border rounded-lg text-lg font-mono">{{ fnord.notes | tojson(indent=2) if fnord else '' }}</textarea>
+                            <p class="text-xs text-gray-500 mt-1">Must be valid JSON</p>
                         </div>
                         
                         <div class="flex items-center gap-4 pt-6">

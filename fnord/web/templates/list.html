@@ -65,28 +65,27 @@
                 {% if fnords %}
                     <div class="space-y-4">
                         {% for fnord in fnords %}
-                            <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow cursor-pointer border-2 border-transparent hover:border-indigo-500">
-                                <a href="/fnord/{{ fnord.id }}" class="block">
-                                    <h3 class="text-xl font-bold text-indigo-600 mb-2">
-                                        {{ fnord.summary[:100] }}
-                                        {% if fnord.summary|length > 100 %}...{% endif %}
-                                    </h3>
-                                    
-                                    <div class="text-sm text-gray-600 space-y-1 mb-4">
-                                        <p>
-                                            <span class="font-semibold">When:</span> {{ fnord.when[:19] }}
-                                        </p>
-                                        <p>
-                                            <span class="font-semibold">Source:</span> {{ fnord.source }}
-                                        </p>
-                                        {% if fnord.where_place_name %}
-                                        <p>
-                                            <span class="font-semibold">Where:</span> {{ fnord.where_place_name }}
-                                        </p>
-                                        {% endif %}
-                                    </div>
-                                </a>
-                            {% endfor %}
+                            <a href="/fnord/{{ fnord.id }}" class="block bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow border-2 border-transparent hover:border-indigo-500">
+                                <h3 class="text-xl font-bold text-indigo-600 mb-2">
+                                    {{ fnord.summary[:100] }}
+                                    {% if fnord.summary|length > 100 %}...{% endif %}
+                                </h3>
+                                 
+                                <div class="text-sm text-gray-600 space-y-1">
+                                    <p>
+                                        <span class="font-semibold">When:</span> {{ fnord.when[:19] }}
+                                    </p>
+                                    <p>
+                                        <span class="font-semibold">Source:</span> {{ fnord.source }}
+                                    </p>
+                                    {% if fnord.where_place_name %}
+                                    <p>
+                                        <span class="font-semibold">Where:</span> {{ fnord.where_place_name }}
+                                    </p>
+                                    {% endif %}
+                                </div>
+                            </a>
+                        {% endfor %}
                     </div>
                     
                     {% if total_pages > 1 %}

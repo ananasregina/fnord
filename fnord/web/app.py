@@ -263,11 +263,9 @@ async def fnord_events():
                 for fnord in new_fnords:
                     template = templates.get_template("fnord_card.html")
                     html = template.render(fnord=fnord, request={})
-                    # Multi-line SSE format
-                    yield "event: new-fnord\n"
-                    for line in html.split('\n'):
-                        yield f"data: {line}\n"
-                    yield "\n"
+                    # Send as single data line for simpler parsing
+                    html_oneline = html.replace('\n', '').replace('\r', '')
+                    yield f"event: new-fnord\ndata: {html_oneline}\n\n"
 
                 last_count = current_count
 

@@ -360,6 +360,7 @@ async def search_fnords(
     query: str,
     limit: Optional[int] = None,
     offset: int = 0,
+    max_distance: float = 0.5,
 ) -> List[FnordSighting]:
     """
     Semantic search using vector similarity.
@@ -371,6 +372,7 @@ async def search_fnords(
         query: Search query
         limit: Maximum number of results
         offset: Number of results to skip
+        max_distance: Maximum cosine distance for results (0.0 = identical, 2.0 = opposite)
 
     Returns:
         List[FnordSighting]: Matching fnords
@@ -390,22 +392,24 @@ async def search_fnords(
         await register_vector(conn)
 
         # Vector similarity search using cosine distance (<=>)
+        # Filter by max_distance to only return sufficiently similar results
         sql = """
             SELECT *, embedding <=> $1 AS distance
             FROM fnords
+            WHERE embedding <=> $1 <= $2
             ORDER BY distance
         """
 
         if limit is not None:
-            sql += " LIMIT $2 OFFSET $3"
-            rows = await conn.fetch(sql, query_embedding, limit, offset)
+            sql += " LIMIT $3 OFFSET $4"
+            rows = await conn.fetch(sql, query_embedding, max_distance, limit, offset)
         else:
-            sql += " OFFSET $2"
-            rows = await conn.fetch(sql, query_embedding, offset)
+            sql += " OFFSET $3"
+            rows = await conn.fetch(sql, query_embedding, max_distance, offset)
 
         results = [_row_to_fnord(row) for row in rows]
 
-        logger.debug(f"Semantic search for '{query}' returned {len(results)} fnords")
+        logger.debug(f"Semantic search for '{query}' returned {len(results)} fnords (max_distance={max_distance})")
         return results
 
 

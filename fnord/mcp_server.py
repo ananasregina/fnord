@@ -188,7 +188,7 @@ def _register_tools():
             ),
             Tool(
                 name="search_fnords",
-                description="Search fnords by text query. Searches in summary, source, and location fields. Returns an array of matching fnords.",
+                description="Search fnords by text query using semantic similarity. Only returns fnords that are sufficiently similar to the query. Returns an array of matching fnords.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -199,6 +199,10 @@ def _register_tools():
                         "limit": {
                             "type": "integer",
                             "description": "Maximum number of results to return (default: all)",
+                        },
+                        "max_distance": {
+                            "type": "number",
+                            "description": "Maximum similarity threshold (0.0-2.0, lower = more similar, default: 0.5)",
                         },
                     },
                     "required": ["query"],
@@ -220,7 +224,7 @@ def _register_tools():
         """
         try:
             # Initialize database
-            init_db()
+            await init_db()
 
             if name == "query_fnord_count":
                 return await _handle_query_fnord_count()
@@ -268,7 +272,7 @@ async def _handle_query_fnord_count() -> list[TextContent]:
     Returns:
         list[TextContent]: The sacred fnord count
     """
-    count = query_fnord_count()
+    count = await query_fnord_count()
 
     if count == 0:
         message = "No fnords recorded yet. The fnords are hiding."
@@ -420,7 +424,7 @@ async def _handle_update_fnord(arguments: dict[str, Any]) -> list[TextContent]:
         return [TextContent(type="text", text="Error: ID is required for update")]
 
     # Get existing fnord
-    existing = get_fnord_by_id(fnord_id)
+    existing = await get_fnord_by_id(fnord_id)
 
     if existing is None:
         return [
@@ -465,7 +469,7 @@ async def _handle_update_fnord(arguments: dict[str, Any]) -> list[TextContent]:
         existing.notes = notes_dict
 
     # Save to database
-    result = update_fnord(existing)
+    result = await update_fnord(existing)
 
     message = f"Fnord {result.id} updated successfully! The fnord has evolved."
 
@@ -487,7 +491,7 @@ async def _handle_delete_fnord(arguments: dict[str, Any]) -> list[TextContent]:
     if fnord_id is None:
         return [TextContent(type="text", text="Error: ID is required for deletion")]
 
-    deleted = delete_fnord(fnord_id)
+    deleted = await delete_fnord(fnord_id)
 
     if deleted:
         message = (
@@ -513,11 +517,12 @@ async def _handle_search_fnords(arguments: dict[str, Any]) -> list[TextContent]:
 
     query = arguments.get("query", "")
     limit = arguments.get("limit")
+    max_distance = arguments.get("max_distance", 0.5)
 
     if not query:
         return [TextContent(type="text", text="Error: Query is required for search")]
 
-    fnords = search_fnords(query, limit=limit)
+    fnords = await search_fnords(query, limit=limit, max_distance=max_distance)
 
     # Convert to JSON array
     fnords_json = [f.to_dict() for f in fnords]

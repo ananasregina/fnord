@@ -5,12 +5,13 @@ Modern, fast web interface with HTMX for interactivity.
 No JavaScript required - Python + HTMX handles everything.
 """
 
+import asyncio
 import json
 from datetime import datetime, UTC
 from typing import Optional
 
 from fastapi import FastAPI, Request, HTTPException, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -28,7 +29,7 @@ from fnord.models import FnordSighting
 app = FastAPI(title="🍎 Fnord Tracker 🍎", version="23.5.0")
 
 # Setup templates
-templates = Jinja2Templates(directory="fnord/web/templates")
+templates = Jinja2Templates(directory="templates")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -240,5 +241,32 @@ async def stats():
     }
 
 
+@app.get("/events")
+async def fnord_events():
+    """
+    SSE endpoint for real-time fnord updates.
+
+    The fnords speak! Listen to their whispers.
+    """
+    async def event_stream():
+        last_count = query_fnord_count()
+        while True:
+            await asyncio.sleep(2)
+            current_count = query_fnord_count()
+
+            if current_count > last_count:
+                new_count = current_count - last_count
+                new_fnords = get_all_fnords(limit=new_count, offset=0)
+
+                for fnord in new_fnords:
+                    template = templates.get_template("fnord_card.html")
+                    html = template.render(fnord=fnord, request={})
+                    yield f"event: new-fnord\ndata: {html}\n\n"
+
+                last_count = current_count
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 # Mount static files
-app.mount("/static", StaticFiles(directory="fnord/web/static"), name="static")
+app.mount("/static", StaticFiles(directory="static"), name="static")

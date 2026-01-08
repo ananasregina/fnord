@@ -38,7 +38,7 @@ async def index(request: Request, page: int = 1, search: Optional[str] = None):
 
     The fnords await their audience.
     """
-    limit = 50
+    limit = 23
     offset = (page - 1) * limit
 
     if search:

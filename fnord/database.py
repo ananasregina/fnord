@@ -186,7 +186,7 @@ def get_all_fnords(limit: Optional[int] = None, offset: int = 0) -> List[FnordSi
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        query = 'SELECT * FROM fnords ORDER BY "when" DESC'
+        query = 'SELECT * FROM fnords ORDER BY created_at DESC'
 
         if limit is not None:
             query += " LIMIT ? OFFSET ?"

@@ -8,6 +8,7 @@ No JavaScript required - Python + HTMX handles everything.
 import asyncio
 import json
 from datetime import datetime, UTC
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Request, HTTPException, Form
@@ -28,8 +29,9 @@ from fnord.models import FnordSighting
 
 app = FastAPI(title="🍎 Fnord Tracker 🍎", version="23.5.0")
 
-# Setup templates
-templates = Jinja2Templates(directory="templates")
+# Setup templates and static files with absolute paths
+BASE_DIR = Path(__file__).parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -269,4 +271,4 @@ async def fnord_events():
 
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")

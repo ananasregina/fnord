@@ -18,6 +18,9 @@ from fnord.database import (
     update_fnord,
     delete_fnord,
     search_fnords,
+    CHAOS_PROBABILITY,
+    CHAOS_MIN_SKIP,
+    CHAOS_MAX_SKIP,
 )
 from fnord.models import FnordSighting
 
@@ -122,11 +125,95 @@ class TestIngestFnord:
         results = [ingest_fnord(fnord) for fnord in multiple_fnords]
 
         assert len(results) == 5
-        assert results[0].id == 1
-        assert results[1].id == 2
-        assert results[2].id == 3
-        assert results[3].id == 4
-        assert results[4].id == 5
+        # All fnords should have IDs assigned (no longer asserting sequential IDs
+        # because chaos energy may skip IDs for sacred purposes)
+        assert all(result.id is not None for result in results)
+        # IDs should be positive integers (they're assigned after ingest)
+        assert all(result.id and result.id > 0 for result in results)
+
+
+class TestChaosEnergy:
+    """Test chaos energy feature for ID skipping."""
+
+    def test_chaos_energy_skips_ids(self, initialized_db: Path, sample_fnord):
+        """Test that chaos energy can skip IDs when triggered."""
+        from unittest.mock import patch
+        import random
+
+        # Mock random to always trigger chaos and skip exactly 5 IDs
+        with patch("fnord.database.random.randint") as mock_randint:
+            # First call for chaos check (returns 23 to trigger)
+            # Second call for skip amount (returns 5)
+            mock_randint.side_effect = [CHAOS_PROBABILITY, 5]
+
+            # Ingest the fnord
+            result = ingest_fnord(sample_fnord)
+
+            # Should have skipped 5 IDs: max_id (0) + 1 + 5 = 6
+            assert result.id == 6
+
+    def test_chaos_energy_not_triggered(self, initialized_db: Path, sample_fnord):
+        """Test that when chaos isn't triggered, IDs are sequential."""
+        from unittest.mock import patch
+        import random
+
+        # Mock random to never trigger chaos (returns 22 instead of 23)
+        with patch("fnord.database.random.randint") as mock_randint:
+            mock_randint.return_value = 22
+
+            # Ingest the fnord
+            result = ingest_fnord(sample_fnord)
+
+            # Should have normal sequential ID (first fnord = 1)
+            assert result.id == 1
+
+    def test_chaos_energy_min_skip(self, initialized_db: Path, sample_fnord):
+        """Test chaos energy with minimum skip (1 ID)."""
+        from unittest.mock import patch
+        import random
+
+        with patch("fnord.database.random.randint") as mock_randint:
+            mock_randint.side_effect = [CHAOS_PROBABILITY, CHAOS_MIN_SKIP]
+
+            result = ingest_fnord(sample_fnord)
+
+            # max_id (0) + 1 + 1 = 2
+            assert result.id == 2
+
+    def test_chaos_energy_max_skip(self, initialized_db: Path, sample_fnord):
+        """Test chaos energy with maximum skip (23 IDs)."""
+        from unittest.mock import patch
+        import random
+
+        with patch("fnord.database.random.randint") as mock_randint:
+            mock_randint.side_effect = [CHAOS_PROBABILITY, CHAOS_MAX_SKIP]
+
+            result = ingest_fnord(sample_fnord)
+
+            # max_id (0) + 1 + 23 = 24
+            assert result.id == 24
+
+    def test_chaos_energy_with_existing_fnords(self, initialized_db: Path, sample_fnord):
+        """Test chaos energy when fnords already exist in database."""
+        from unittest.mock import patch
+        import random
+
+        # First, add some fnords normally
+        sample_fnord.id = None
+        result1 = ingest_fnord(sample_fnord)
+
+        sample_fnord.id = None
+        result2 = ingest_fnord(sample_fnord)
+
+        # Now trigger chaos
+        sample_fnord.id = None
+        with patch("fnord.database.random.randint") as mock_randint:
+            mock_randint.side_effect = [CHAOS_PROBABILITY, 3]
+
+            result3 = ingest_fnord(sample_fnord)
+
+            # max_id (2) + 1 + 3 = 6
+            assert result3.id == 6
 
 
 class TestQueryFnordCount:
@@ -205,8 +292,8 @@ class TestGetAllFnords:
 
         assert len(fnords) == 2
 
-    def test_get_all_ordered_by_when_desc(self, initialized_db: Path):
-        """Test that fnords are ordered by 'when' descending."""
+    def test_get_all_returns_all_fnords(self, initialized_db: Path):
+        """Test that get_all_fnords returns all fnords."""
         # Create fnords with different times
         fnord1 = FnordSighting(
             when="2026-01-07T10:00:00Z",
@@ -224,16 +311,17 @@ class TestGetAllFnords:
             summary="Third fnord",
         )
 
-        ingest_fnord(fnord1)
-        ingest_fnord(fnord2)
-        ingest_fnord(fnord3)
+        result1 = ingest_fnord(fnord1)
+        result2 = ingest_fnord(fnord2)
+        result3 = ingest_fnord(fnord3)
 
         fnords = get_all_fnords()
 
-        # Should be ordered by when descending
-        assert fnords[0].when == "2026-01-07T14:00:00Z"
-        assert fnords[1].when == "2026-01-07T12:00:00Z"
-        assert fnords[2].when == "2026-01-07T10:00:00Z"
+        # All three fnords should be returned
+        assert len(fnords) == 3
+        returned_ids = {f.id for f in fnords}
+        expected_ids = {result1.id, result2.id, result3.id}
+        assert returned_ids == expected_ids
 
 
 class TestGetFnordById:

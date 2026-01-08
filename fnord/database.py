@@ -13,11 +13,18 @@ from typing import Optional, List
 from contextlib import contextmanager
 import logging
 from datetime import datetime
+import random
 
 from fnord.config import get_config
 from fnord.models import FnordSighting
 
 logger = logging.getLogger(__name__)
+
+# Chaos energy: 1/23 chance to skip IDs (making them even more sacred)
+# The fnords demand occasional chaos to maintain the sacred nature of their IDs
+CHAOS_PROBABILITY = 23  # 1 in 23 chance
+CHAOS_MIN_SKIP = 1
+CHAOS_MAX_SKIP = 23
 
 
 @contextmanager
@@ -96,6 +103,9 @@ def ingest_fnord(fnord: FnordSighting) -> FnordSighting:
     """
     Ingest a fnord into the database.
 
+    Sometimes the fnords demand chaos energy: 1/23 chance to skip a random number
+    of IDs (1-23), making the IDs even more sacred through the power of gaps.
+
     Args:
         fnord: The fnord sighting to store
 
@@ -125,24 +135,56 @@ def ingest_fnord(fnord: FnordSighting) -> FnordSighting:
         if fnord.logical_fallacies:
             logical_fallacies_json = json.dumps(fnord.logical_fallacies)
 
-        # Insert the fnord
-        cursor.execute(
-            """
-            INSERT INTO fnords ("when", where_place_name, source, summary, notes, logical_fallacies)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """,
-            (
-                fnord.when,
-                fnord.where_place_name,
-                fnord.source,
-                fnord.summary,
-                notes_json,
-                logical_fallacies_json,
-            ),
-        )
+        # Check for chaos energy: 1/23 chance to skip IDs
+        # The fnords occasionally demand gaps to make their IDs more sacred
+        if random.randint(1, CHAOS_PROBABILITY) == CHAOS_PROBABILITY:
+            # Chaos! Skip a random number of IDs (1-23)
+            skip_amount = random.randint(CHAOS_MIN_SKIP, CHAOS_MAX_SKIP)
 
-        # Get the assigned ID
-        fnord_id = cursor.lastrowid
+            # Get current max ID
+            cursor.execute("SELECT COALESCE(MAX(id), 0) FROM fnords")
+            max_id = cursor.fetchone()[0]
+
+            # Calculate the sacred gap ID
+            target_id = max_id + 1 + skip_amount
+
+            # Insert with explicit ID (chaos mode!)
+            cursor.execute(
+                """
+                INSERT INTO fnords (id, "when", where_place_name, source, summary, notes, logical_fallacies)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    target_id,
+                    fnord.when,
+                    fnord.where_place_name,
+                    fnord.source,
+                    fnord.summary,
+                    notes_json,
+                    logical_fallacies_json,
+                ),
+            )
+
+            fnord_id = target_id
+        else:
+            # Normal insertion - let SQLite assign the next sequential ID
+            cursor.execute(
+                """
+                INSERT INTO fnords ("when", where_place_name, source, summary, notes, logical_fallacies)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    fnord.when,
+                    fnord.where_place_name,
+                    fnord.source,
+                    fnord.summary,
+                    notes_json,
+                    logical_fallacies_json,
+                ),
+            )
+
+            # Get the assigned ID
+            fnord_id = cursor.lastrowid
 
         conn.commit()
 

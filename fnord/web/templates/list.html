@@ -103,9 +103,9 @@
         </header>
         
         <main>
-            <div id="fnord-list" hx-ext="sse" sse-connect="/events" sse-swap="new-fnord">
+            <div id="fnord-list">
                 {% if fnords %}
-                    <div class="space-y-4">
+                    <div class="space-y-4" id="fnord-container" hx-ext="sse" sse-connect="/events" sse-swap="new-fnord" hx-swap="beforeend">
                         {% for fnord in fnords %}
                             {% include "fnord_card.html" %}
                         {% endfor %}

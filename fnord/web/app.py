@@ -241,5 +241,4 @@ async def stats():
 
 
 # Mount static files
-# In production, use proper static file serving
-# app.mount("/static", StaticFiles(directory="fnord/web/static"), name="static")
+app.mount("/static", StaticFiles(directory="fnord/web/static"), name="static")

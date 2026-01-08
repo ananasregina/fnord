@@ -28,4 +28,5 @@ if __name__ == "__main__":
         host="127.0.0.1",
         port=port,
         reload=True,
+        timeout_graceful_shutdown=1,
     )

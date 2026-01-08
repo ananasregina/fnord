@@ -185,8 +185,8 @@ async def ingest_fnord(fnord: FnordSighting) -> FnordSighting:
                 INSERT INTO fnords (id, "when", where_place_name, source, summary, notes, logical_fallacies, embedding)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             """, target_id, when_dt, fnord.where_place_name, fnord.source, fnord.summary,
-                json.dumps(fnord.notes) if fnord.notes else None,
-                json.dumps(fnord.logical_fallacies) if fnord.logical_fallacies else None, embedding)
+                fnord.notes,
+                fnord.logical_fallacies, embedding)
 
             fnord_id = target_id
             logger.info(f"Chaos energy! Skipped to ID: {fnord_id}")
@@ -200,8 +200,8 @@ async def ingest_fnord(fnord: FnordSighting) -> FnordSighting:
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id
             """, when_dt, fnord.where_place_name, fnord.source, fnord.summary,
-                json.dumps(fnord.notes) if fnord.notes else None,
-                json.dumps(fnord.logical_fallacies) if fnord.logical_fallacies else None, embedding)
+                fnord.notes,
+                fnord.logical_fallacies, embedding)
 
         logger.info(f"Fnord ingested with ID: {fnord_id} - Hail Discordia!")
 
@@ -324,8 +324,8 @@ async def update_fnord(fnord: FnordSighting) -> FnordSighting:
                 notes = $5, logical_fallacies = $6, embedding = $7, updated_at = NOW()
             WHERE id = $8
         """, when_dt, fnord.where_place_name, fnord.source, fnord.summary,
-            json.dumps(fnord.notes) if fnord.notes else None,
-            json.dumps(fnord.logical_fallacies) if fnord.logical_fallacies else None, embedding, fnord.id)
+            fnord.notes,
+            fnord.logical_fallacies, embedding, fnord.id)
 
         logger.info(f"Fnord updated: ID {fnord.id} - The fnord has evolved!")
 
@@ -423,12 +423,28 @@ def _row_to_fnord(row) -> FnordSighting:
     Returns:
         FnordSighting: The fnord object
     """
+    # Handle notes: may be string (old data) or dict (new data)
+    notes = row["notes"]
+    if notes is not None and isinstance(notes, str):
+        try:
+            notes = json.loads(notes)
+        except (json.JSONDecodeError, TypeError):
+            notes = None
+
+    # Handle logical_fallacies: may be string (old data) or list (new data)
+    logical_fallacies = row["logical_fallacies"]
+    if logical_fallacies is not None and isinstance(logical_fallacies, str):
+        try:
+            logical_fallacies = json.loads(logical_fallacies)
+        except (json.JSONDecodeError, TypeError):
+            logical_fallacies = None
+
     return FnordSighting(
         id=row["id"],
         when=row["when"].isoformat() if row["when"] else "",
         where_place_name=row["where_place_name"],
         source=row["source"],
         summary=row["summary"],
-        notes=row["notes"],
-        logical_fallacies=row["logical_fallacies"],
+        notes=notes,
+        logical_fallacies=logical_fallacies,
     )

@@ -311,7 +311,9 @@ def delete_fnord(fnord_id: int) -> bool:
         return deleted
 
 
-def search_fnords(query: str, limit: Optional[int] = None) -> List[FnordSighting]:
+def search_fnords(
+    query: str, limit: Optional[int] = None, offset: Optional[int] = None
+) -> List[FnordSighting]:
     """
     Search fnords by text query.
 
@@ -320,6 +322,7 @@ def search_fnords(query: str, limit: Optional[int] = None) -> List[FnordSighting
     Args:
         query: Search query
         limit: Maximum number of results
+        offset: Number of results to skip
 
     Returns:
         List[FnordSighting]: Matching fnords
@@ -337,9 +340,19 @@ def search_fnords(query: str, limit: Optional[int] = None) -> List[FnordSighting
 
         if limit is not None:
             sql_query += " LIMIT ?"
-            cursor.execute(sql_query, (search_pattern, search_pattern, search_pattern, limit))
+            if offset is not None:
+                sql_query += " OFFSET ?"
+                cursor.execute(
+                    sql_query, (search_pattern, search_pattern, search_pattern, limit, offset)
+                )
+            else:
+                cursor.execute(sql_query, (search_pattern, search_pattern, search_pattern, limit))
         else:
-            cursor.execute(sql_query, (search_pattern, search_pattern, search_pattern))
+            if offset is not None:
+                sql_query += " OFFSET ?"
+                cursor.execute(sql_query, (search_pattern, search_pattern, search_pattern, offset))
+            else:
+                cursor.execute(sql_query, (search_pattern, search_pattern, search_pattern))
 
         rows = cursor.fetchall()
 

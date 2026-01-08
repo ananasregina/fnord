@@ -4,7 +4,6 @@ Fnord Tracker - Main Entry Point
 The fnords have many ways to commune:
 - CLI: Quick one-shot commands
 - MCP: Server for AI agents
-- TUI: Interactive Textual interface
 
 This module decides which path to take.
 """
@@ -15,7 +14,6 @@ import logging
 from typing import NoReturn
 
 from fnord.cli import app as cli_app
-from fnord.tui import run_tui
 from fnord.mcp_server import get_server
 from fnord.database import init_db
 
@@ -29,7 +27,6 @@ def main() -> NoReturn:
     Dispatches to:
     - CLI mode (default)
     - MCP server mode (--mcp flag)
-    - TUI mode (fnord tui command)
 
     All paths lead to fnord tracking!
     """
@@ -37,9 +34,6 @@ def main() -> NoReturn:
     if "--mcp" in sys.argv or "-m" in sys.argv:
         # MCP server mode
         _run_mcp_server()
-    elif "tui" in sys.argv:
-        # TUI mode (handled by CLI, but we'll dispatch here)
-        _run_tui()
     else:
         # CLI mode
         try:
@@ -78,22 +72,6 @@ def _run_mcp_server() -> NoReturn:
     asyncio.run(run_server())
 
     # Should never reach here
-    sys.exit(0)
-
-
-def _run_tui() -> NoReturn:
-    """
-    Run the TUI.
-
-    Launch the beautiful Textual interface for fnord interaction.
-    """
-    # Initialize database
-    init_db()
-
-    # Run the TUI
-    logger.info("Starting fnord TUI... The fnords await your gaze.")
-    run_tui()
-
     sys.exit(0)
 
 

@@ -6,7 +6,7 @@ A fnord is something that is seen out of the corner of your eye, but when you tu
 
 ## Features
 
-Hail Discordia! This sacred tool offers three modes of fnord interaction:
+Hail Discordia! This sacred tool offers multiple modes of fnord interaction:
 
 ### 🖥️ CLI (Command Line Interface)
 Quick one-shot commands for the busy Discordian:
@@ -20,15 +20,7 @@ For AI agents and LLMs to communicate with the fnord realm:
 - `ingest_fnord` - Add new fnord observations
 - Runs via `fnord --mcp` flag
 
-### 🎨 TUI (Text User Interface)
-Interactive fnord browsing and editing with Textual:
-- Beautiful dark-themed dashboard
-- Create, Read, Update, Delete fnords
-- Search and filter sightings
-- Real-time database sync
-- Launch with `fnord tui`
-
-### 🌐 Web Interface (NEW!)
+### 🌐 Web Interface
 Modern web interface built with FastAPI + HTMX:
 - Beautiful, responsive UI
 - Create, View, Edit, Delete fnords
@@ -53,27 +45,7 @@ pip install -e ".[dev]"
 
 ## Quick Start
 
-### TUI Mode (CLI)
-```bash
-# Initialize fnord tracker (creates fnord.db if needed)
-fnord count
-
-# Ingest a fnord sighting
-fnord ingest \
-   --when "2026-01-07T14:23:00Z" \
-   --source "News Article" \
-   --summary "Found fnord hidden in tech news" \
-   --where-place-name "Seattle, WA" \
-   --notes '{"url": "https://example.com", "author": "Unknown"}'
-
-# Check the sacred count
-fnord count
-
-# List all fnords
-fnord list
-```
-
-### Web Interface (NEW!)
+### Web Interface
 ```bash
 # Launch web server
 fnord web
@@ -137,18 +109,6 @@ pytest tests/test_database.py
 pytest -v
 ```
 
-## Keyboard Shortcuts (TUI)
-
-| Key | Action |
-|-----|--------|
-| `q` | Quit |
-| `n` | New fnord |
-| `e` | Edit selected |
-| `d` | Delete selected |
-| `s` | Search |
-| `r` | Refresh |
-| `?` | Help |
-
 ## Development
 
 ```bash
@@ -193,20 +153,6 @@ fnord --mcp
 # The server exposes these tools:
 # 1. query_fnord_count() -> int
 # 2. ingest_fnord(data: dict) -> dict
-```
-
-## TUI Screenshots
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  F̶N̶O̶R̶D̶  T̶R̶A̶C̶K̶E̶R̶                    [Add] [Search] [Quit] │
-├─────────────────────────────────────────────────────────┤
-│  Total Sightings: 23  |  Last: 2026-01-07T14:23:00Z    │
-├─────────────────────────────────────────────────────────┤
-│  ▶ 2026-01-07 14:23  News: Found in article...         │
-│  ▶ 2026-01-06 09:15  Walk: Park bench graffiti         │
-│  ▶ 2026-01-05 22:30  Code: Debug log fnord bug         │
-└─────────────────────────────────────────────────────────┘
 ```
 
 ---

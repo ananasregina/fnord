@@ -6,7 +6,7 @@ Running tests creates fnords with "Test" in their summary in your actual databas
 
 ## Solution 1: Tests Now Use Temporary Database
 
-The `app` fixture in `tests/test_tui_integration.py` has been updated to use the `initialized_db` fixture from `conftest.py`. This fixture:
+Tests have been updated to use the `initialized_db` fixture from `conftest.py`. This fixture:
 
 - Creates a temporary database for each test
 - Automatically cleans up the temporary database after each test runs
@@ -50,16 +50,9 @@ After running tests or the cleanup script, verify your real fnords are intact:
 fnord list
 ```
 
-Or use the TUI:
-
-```bash
-fnord tui
-```
-
 You should only see your actual fnords, not test records.
 
 ## Prevention Going Forward
 
 - The test fixtures now use temporary databases by default
-- Only the original test files (`tests/test_tui.py` and older tests) may write to real DB
-- Integration tests use isolated temporary databases
+- Tests use isolated temporary databases

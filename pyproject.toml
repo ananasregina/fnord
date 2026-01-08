@@ -11,7 +11,7 @@ license = {text = "WTFPL - Do What The Fuck You Want To Public License"}
 authors = [
     {name = "The Fnord Keepers", email = "fnord@eris.garden"}
 ]
-keywords = ["fnord", "discordian", "illuminatus", "tracker", "mcp", "cli", "tui", "web"]
+ keywords = ["fnord", "discordian", "illuminatus", "tracker", "mcp", "cli", "web"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: End Users/Desktop",
@@ -23,24 +23,21 @@ classifiers = [
     "Topic :: Utilities",
 ]
 requires-python = ">=3.11"
-dependencies = [
-    # MCP for AI integration (fnords speak to machines too!)
-    "mcp",
+ dependencies = [
+     # MCP for AI integration (fnords speak to machines too!)
+     "mcp",
 
-    # Typer for CLI (23 command lines, naturally)
-    "typer",
+     # Typer for CLI (23 command lines, naturally)
+     "typer",
 
-    # Textual for TUI (visual fnords are best fnords)
-    "textual",
+     # Dotenv for config (23 config locations)
+     "python-dotenv",
 
-    # Dotenv for config (23 config locations)
-    "python-dotenv",
-
-    # Web framework for modern UI (fnords deserve cool web interface)
-    "fastapi",
-    "jinja2",
-    "uvicorn",
-]
+     # Web framework for modern UI (fnords deserve cool web interface)
+     "fastapi",
+     "jinja2",
+     "uvicorn",
+ ]
 
 [project.optional-dependencies]
 dev = [

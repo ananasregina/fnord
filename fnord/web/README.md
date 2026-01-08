@@ -62,23 +62,25 @@ http://localhost:8000
 
 ```
 fnord/
-├── fnord/
-│   ├── __init__.py
-│   ├── config.py
-│   ├── database.py          # SQLite database layer
-│   ├── models.py
-│   ├── tui.py               # Textual TUI (CLI)
-│   └── web/
-│       ├── __init__.py
-│       ├── app.py             # FastAPI application
-│       └── templates/         # Jinja2 HTML templates
-│           ├── base.html
-│           ├── list.html
-│           └── detail.html
-└── tests/
-    ├── test_tui.py
-    └── test_tui_integration.py
-```
+ ├── fnord/
+ │   ├── __init__.py
+ │   ├── config.py
+ │   ├── database.py          # SQLite database layer
+ │   ├── models.py
+ │   └── web/
+ │       ├── __init__.py
+ │       ├── app.py             # FastAPI application
+ │       └── templates/         # Jinja2 HTML templates
+ │           ├── base.html
+ │           ├── list.html
+ │           └── detail.html
+ └── tests/
+     ├── test_cli.py
+     ├── test_config.py
+     ├── test_database.py
+     ├── test_mcp_server.py
+     └── test_models.py
+ ```
 
 ## Technology Stack
 

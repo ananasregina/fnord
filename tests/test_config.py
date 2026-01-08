@@ -118,56 +118,6 @@ class TestConfig:
 
         assert level == test_level
 
-    def test_get_tui_theme_default(self, monkeypatch: pytest.MonkeyPatch):
-        """Test default TUI theme."""
-        monkeypatch.delenv("FNORD_THEME", raising=False)
-
-        config = Config()
-        theme = config.get_tui_theme()
-
-        # fnords prefer dark themes
-        assert theme == "dark"
-
-    def test_get_tui_theme_from_env(self, monkeypatch: pytest.MonkeyPatch):
-        """Test TUI theme from environment variable."""
-        test_theme = "light"
-        monkeypatch.setenv("FNORD_THEME", test_theme)
-
-        config = Config()
-        theme = config.get_tui_theme()
-
-        assert theme == test_theme
-
-    def test_get_tui_page_size_default(self, monkeypatch: pytest.MonkeyPatch):
-        """Test default TUI page size."""
-        monkeypatch.delenv("FNORD_PAGE_SIZE", raising=False)
-
-        config = Config()
-        page_size = config.get_tui_page_size()
-
-        # 23 is sacred
-        assert page_size == 23
-
-    def test_get_tui_page_size_from_env(self, monkeypatch: pytest.MonkeyPatch):
-        """Test TUI page size from environment variable."""
-        test_size = "42"
-        monkeypatch.setenv("FNORD_PAGE_SIZE", test_size)
-
-        config = Config()
-        page_size = config.get_tui_page_size()
-
-        assert page_size == 42
-
-    def test_get_tui_page_size_invalid_env(self, monkeypatch: pytest.MonkeyPatch):
-        """Test TUI page size with invalid environment variable."""
-        monkeypatch.setenv("FNORD_PAGE_SIZE", "not-a-number")
-
-        config = Config()
-        page_size = config.get_tui_page_size()
-
-        # Should fall back to default
-        assert page_size == 23
-
 
 class TestConfigSingleton:
     """Test the config singleton pattern."""

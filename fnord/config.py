@@ -135,29 +135,6 @@ class Config:
         """
         return os.getenv("FNORD_LOG_LEVEL", "INFO")
 
-    def get_tui_theme(self) -> str:
-        """
-        Get the TUI theme.
-
-        Returns:
-            str: Theme name (dark/light/auto)
-        """
-        return os.getenv("FNORD_THEME", "dark")
-
-    def get_tui_page_size(self) -> int:
-        """
-        Get the TUI page size (number of fnords per page).
-
-        23 is sacred, but user can override.
-
-        Returns:
-            int: Number of fnords per page
-        """
-        try:
-            return int(os.getenv("FNORD_PAGE_SIZE", "23"))
-        except ValueError:
-            return 23
-
 
 # Singleton instance for the whole application
 _config: Optional[Config] = None

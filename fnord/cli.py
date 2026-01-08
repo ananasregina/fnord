@@ -3,7 +3,7 @@ Fnord CLI Module
 
 Command-line interface for fnord tracking.
 
-Quick one-shot commands for the busy Discordian who has no time for TUIs.
+Quick one-shot commands for the busy Discordian.
 """
 
 import typer

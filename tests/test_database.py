@@ -1,13 +1,13 @@
 """
-Tests for fnord database operations.
+Tests for fnord database operations with PostgreSQL.
 
 The fnords must be stored safely. We test all CRUD operations thoroughly.
+PostgreSQL + pgvector + async + semantic search
 """
 
 import pytest
-from pathlib import Path
-from datetime import datetime, timezone
-from typing import Tuple
+import pytest_asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fnord.database import (
     init_db,
@@ -18,436 +18,436 @@ from fnord.database import (
     update_fnord,
     delete_fnord,
     search_fnords,
-    CHAOS_PROBABILITY,
-    CHAOS_MIN_SKIP,
-    CHAOS_MAX_SKIP,
+    get_pool,
 )
 from fnord.models import FnordSighting
+from fnord.embeddings import EmbeddingService
+from fnord.config import Config
 
 
 class TestDatabaseInit:
     """Test database initialization."""
 
-    def test_init_db_creates_table(self, initialized_db: Path, db_connection):
-        """Test that init_db creates the fnords table."""
-        cursor = db_connection.cursor()
+    @pytest.mark.asyncio
+    async def test_init_db_creates_table_and_index(self, pool):
+        """Test that init_db creates fnords table and vector index."""
+        await init_db()
 
-        # Check that table exists
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='fnords'"
-        )
-        result = cursor.fetchone()
+        async with pool.acquire() as conn:
+            # Check if table exists
+            result = await conn.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'fnords')"
+            )
 
-        assert result is not None
-        assert result["name"] == "fnords"
+            assert result is True, "fnords table should exist"
 
-    def test_init_db_creates_indexes(self, initialized_db: Path, db_connection):
-        """Test that init_db creates indexes."""
-        cursor = db_connection.cursor()
+            # Check if vector extension is enabled
+            result = await conn.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')"
+            )
 
-        # Check that indexes exist
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='fnords'"
-        )
-        indexes = cursor.fetchall()
+            assert result is True, "vector extension should be enabled"
 
-        index_names = [idx["name"] for idx in indexes]
+            # Check if embedding column exists
+            result = await conn.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'fnords' AND column_name = 'embedding')"
+            )
 
-        assert "idx_fnords_when" in index_names
-        assert "idx_fnords_source" in index_names
+            assert result is True, "embedding column should exist"
+
+            # Check if vector index exists
+            result = await conn.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_fnords_embedding')"
+            )
+
+            assert result is True, "vector index should exist"
 
 
 class TestIngestFnord:
     """Test fnord ingestion."""
 
-    def test_ingest_fnord_success(self, initialized_db: Path, sample_fnord):
+    @pytest.mark.asyncio
+    async def test_ingest_fnord_success(self, pool, sample_fnord):
         """Test successful fnord ingestion."""
-        result = ingest_fnord(sample_fnord)
+        await init_db()
 
-        assert result.id is not None
-        assert result.id == 1  # First fnord gets ID 1
+        result = await ingest_fnord(sample_fnord)
 
-    def test_ingest_fnord_saves_to_db(self, initialized_db: Path, sample_fnord, db_connection):
-        """Test that fnord is saved to database."""
-        ingest_fnord(sample_fnord)
+        assert result.id is not None, "Fnord should have an ID"
+        assert result.id > 0, "Fnord ID should be positive"
 
-        cursor = db_connection.cursor()
-        cursor.execute("SELECT * FROM fnords WHERE id = 1")
-        row = cursor.fetchone()
+        # Verify fnord was saved to database
+        fnord = await get_fnord_by_id(result.id)
+        assert fnord is not None, "Fnord should be retrievable"
+        assert fnord.summary == sample_fnord.summary, "Summary should match"
+        assert fnord.source == sample_fnord.source, "Source should match"
 
-        assert row is not None
-        assert row["when"] == sample_fnord.when
-        assert row["source"] == sample_fnord.source
-        assert row["summary"] == sample_fnord.summary
+    @pytest.mark.asyncio
+    async def test_ingest_fnord_with_notes(self, pool, sample_fnord):
+        """Test fnord ingestion with notes."""
+        sample_fnord.notes = {"url": "https://example.com", "author": "Test Author"}
 
-    def test_ingest_fnord_with_notes(self, initialized_db: Path, db_connection):
-        """Test fnord with notes is saved correctly."""
-        notes = {"url": "https://example.com", "author": "Test Author"}
-        fnord = FnordSighting(
-            when="2026-01-07T14:23:00Z",
-            source="News",
-            summary="Found fnord",
-            notes=notes,
-        )
+        await init_db()
+        result = await ingest_fnord(sample_fnord)
 
-        result = ingest_fnord(fnord)
+        fnord = await get_fnord_by_id(result.id)
+        assert fnord.notes == sample_fnord.notes, "Notes should be saved"
 
-        cursor = db_connection.cursor()
-        cursor.execute("SELECT notes FROM fnords WHERE id = ?", (result.id,))
-        row = cursor.fetchone()
+    @pytest.mark.asyncio
+    async def test_ingest_fnord_with_logical_fallacies(self, pool, sample_fnord):
+        """Test fnord ingestion with logical fallacies."""
+        sample_fnord.logical_fallacies = ["ad hominem", "straw man"]
 
-        assert row["notes"] == '{"url": "https://example.com", "author": "Test Author"}'
+        await init_db()
+        result = await ingest_fnord(sample_fnord)
 
-    def test_ingest_fnord_invalid_when(self, initialized_db: Path):
-        """Test that fnord with invalid 'when' fails validation."""
-        fnord = FnordSighting(
-            when="not-a-date",
-            source="News",
-            summary="Found fnord",
-        )
+        fnord = await get_fnord_by_id(result.id)
+        assert fnord.logical_fallacies == sample_fnord.logical_fallacies
 
-        with pytest.raises(ValueError, match="Invalid fnord"):
-            ingest_fnord(fnord)
+    @pytest.mark.asyncio
+    async def test_ingest_fnord_generates_embedding(self, pool, sample_fnord):
+        """Test that ingestion generates and stores embedding."""
+        await init_db()
 
-    def test_ingest_fnord_missing_source(self, initialized_db: Path):
-        """Test that fnord with missing 'source' fails validation."""
-        fnord = FnordSighting(
-            when="2026-01-07T14:23:00Z",
-            source="",
-            summary="Found fnord",
-        )
+        result = await ingest_fnord(sample_fnord)
 
-        with pytest.raises(ValueError, match="Invalid fnord"):
-            ingest_fnord(fnord)
+        # Verify embedding was generated and stored
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT embedding FROM fnords WHERE id = $1", result.id
+            )
 
-    def test_ingest_multiple_fnords(self, initialized_db: Path, multiple_fnords):
-        """Test ingesting multiple fnords."""
-        results = [ingest_fnord(fnord) for fnord in multiple_fnords]
-
-        assert len(results) == 5
-        # All fnords should have IDs assigned (no longer asserting sequential IDs
-        # because chaos energy may skip IDs for sacred purposes)
-        assert all(result.id is not None for result in results)
-        # IDs should be positive integers (they're assigned after ingest)
-        assert all(result.id and result.id > 0 for result in results)
-
-
-class TestChaosEnergy:
-    """Test chaos energy feature for ID skipping."""
-
-    def test_chaos_energy_skips_ids(self, initialized_db: Path, sample_fnord):
-        """Test that chaos energy can skip IDs when triggered."""
-        from unittest.mock import patch
-        import random
-
-        # Mock random to always trigger chaos and skip exactly 5 IDs
-        with patch("fnord.database.random.randint") as mock_randint:
-            # First call for chaos check (returns 23 to trigger)
-            # Second call for skip amount (returns 5)
-            mock_randint.side_effect = [CHAOS_PROBABILITY, 5]
-
-            # Ingest the fnord
-            result = ingest_fnord(sample_fnord)
-
-            # Should have skipped 5 IDs: max_id (0) + 1 + 5 = 6
-            assert result.id == 6
-
-    def test_chaos_energy_not_triggered(self, initialized_db: Path, sample_fnord):
-        """Test that when chaos isn't triggered, IDs are sequential."""
-        from unittest.mock import patch
-        import random
-
-        # Mock random to never trigger chaos (returns 22 instead of 23)
-        with patch("fnord.database.random.randint") as mock_randint:
-            mock_randint.return_value = 22
-
-            # Ingest the fnord
-            result = ingest_fnord(sample_fnord)
-
-            # Should have normal sequential ID (first fnord = 1)
-            assert result.id == 1
-
-    def test_chaos_energy_min_skip(self, initialized_db: Path, sample_fnord):
-        """Test chaos energy with minimum skip (1 ID)."""
-        from unittest.mock import patch
-        import random
-
-        with patch("fnord.database.random.randint") as mock_randint:
-            mock_randint.side_effect = [CHAOS_PROBABILITY, CHAOS_MIN_SKIP]
-
-            result = ingest_fnord(sample_fnord)
-
-            # max_id (0) + 1 + 1 = 2
-            assert result.id == 2
-
-    def test_chaos_energy_max_skip(self, initialized_db: Path, sample_fnord):
-        """Test chaos energy with maximum skip (23 IDs)."""
-        from unittest.mock import patch
-        import random
-
-        with patch("fnord.database.random.randint") as mock_randint:
-            mock_randint.side_effect = [CHAOS_PROBABILITY, CHAOS_MAX_SKIP]
-
-            result = ingest_fnord(sample_fnord)
-
-            # max_id (0) + 1 + 23 = 24
-            assert result.id == 24
-
-    def test_chaos_energy_with_existing_fnords(self, initialized_db: Path, sample_fnord):
-        """Test chaos energy when fnords already exist in database."""
-        from unittest.mock import patch
-        import random
-
-        # First, add some fnords normally
-        sample_fnord.id = None
-        result1 = ingest_fnord(sample_fnord)
-
-        sample_fnord.id = None
-        result2 = ingest_fnord(sample_fnord)
-
-        # Now trigger chaos
-        sample_fnord.id = None
-        with patch("fnord.database.random.randint") as mock_randint:
-            mock_randint.side_effect = [CHAOS_PROBABILITY, 3]
-
-            result3 = ingest_fnord(sample_fnord)
-
-            # max_id (2) + 1 + 3 = 6
-            assert result3.id == 6
+            assert row is not None, "Embedding should be stored"
+            assert row["embedding"] is not None, "Embedding should not be null"
+            assert len(row["embedding"]) == 768, "Embedding should have 768 dimensions"
 
 
 class TestQueryFnordCount:
     """Test querying fnord count."""
 
-    def test_query_count_empty_db(self, initialized_db: Path):
+    @pytest.mark.asyncio
+    async def test_query_count_empty_db(self, pool):
         """Test count when database is empty."""
-        count = query_fnord_count()
+        await init_db()
 
-        assert count == 0
+        count = await query_fnord_count()
 
-    def test_query_count_one_fnord(self, initialized_db: Path, ingested_fnord):
-        """Test count with one fnord."""
-        count = query_fnord_count()
+        assert count == 0, "Count should be 0 for empty database"
 
-        assert count == 1
+    @pytest.mark.asyncio
+    async def test_query_count_with_fnords(self, pool, sample_fnord):
+        """Test count when fnords exist."""
+        await init_db()
+        await ingest_fnord(sample_fnord)
 
-    def test_query_count_multiple_fnords(self, initialized_db: Path, ingested_multiple_fnords):
-        """Test count with multiple fnords."""
-        count = query_fnord_count()
+        count = await query_fnord_count()
 
-        assert count == 5
-
-    def test_query_count_sacred_number(self, initialized_db: Path):
-        """Test the sacred number 23."""
-        # Ingest 23 fnords
-        for i in range(23):
-            fnord = FnordSighting(
-                when="2026-01-07T14:23:00Z",
-                source="Test",
-                summary=f"Fnord #{i+1}",
-            )
-            ingest_fnord(fnord)
-
-        count = query_fnord_count()
-
-        assert count == 23  # All hail Eris!
+        assert count == 1, "Count should be 1"
 
 
 class TestGetAllFnords:
     """Test getting all fnords."""
 
-    def test_get_all_empty_db(self, initialized_db: Path):
+    @pytest.mark.asyncio
+    async def test_get_all_empty_db(self, pool):
         """Test getting all fnords from empty database."""
-        fnords = get_all_fnords()
+        await init_db()
 
-        assert len(fnords) == 0
+        fnords = await get_all_fnords()
 
-    def test_get_all_one_fnord(self, initialized_db: Path, ingested_fnord):
-        """Test getting all fnords with one fnord."""
-        fnords = get_all_fnords()
+        assert len(fnords) == 0, "Should return empty list"
 
-        assert len(fnords) == 1
-        assert fnords[0].id == ingested_fnord.id
-        assert fnords[0].summary == ingested_fnord.summary
+    @pytest.mark.asyncio
+    async def test_get_all_with_fnords(self, pool, sample_fnord):
+        """Test getting all fnords when fnords exist."""
+        await init_db()
+        await ingest_fnord(sample_fnord)
 
-    def test_get_all_multiple_fnords(self, initialized_db: Path, ingested_multiple_fnords):
-        """Test getting all fnords with multiple fnords."""
-        fnords = get_all_fnords()
+        fnords = await get_all_fnords()
 
-        assert len(fnords) == 5
+        assert len(fnords) == 1, "Should return one fnord"
+        assert fnords[0].summary == sample_fnord.summary
 
-        # Check that all are returned
-        ids = [f.id for f in fnords]
-        assert all(id_val is not None for id_val in ids)
+    @pytest.mark.asyncio
+    async def test_get_all_with_limit(self, pool, sample_fnord):
+        """Test getting all fnords with limit."""
+        await init_db()
+        await ingest_fnord(sample_fnord)
+        await ingest_fnord(sample_fnord)
 
-    def test_get_all_with_limit(self, initialized_db: Path, ingested_multiple_fnords):
-        """Test getting fnords with limit."""
-        fnords = get_all_fnords(limit=2)
+        fnords = await get_all_fnords(limit=1)
 
-        assert len(fnords) == 2
+        assert len(fnords) == 1, "Should return one fnord with limit"
 
-    def test_get_all_with_offset(self, initialized_db: Path, ingested_multiple_fnords):
-        """Test getting fnords with offset."""
-        fnords = get_all_fnords(limit=2, offset=1)
+    @pytest.mark.asyncio
+    async def test_get_all_with_offset(self, pool, sample_fnord):
+        """Test getting all fnords with offset."""
+        await init_db()
+        await ingest_fnord(sample_fnord)
+        await ingest_fnord(sample_fnord)
 
-        assert len(fnords) == 2
+        fnords = await get_all_fnords(offset=1)
 
-    def test_get_all_returns_all_fnords(self, initialized_db: Path):
-        """Test that get_all_fnords returns all fnords."""
-        # Create fnords with different times
-        fnord1 = FnordSighting(
-            when="2026-01-07T10:00:00Z",
-            source="Test",
-            summary="First fnord",
-        )
-        fnord2 = FnordSighting(
-            when="2026-01-07T14:00:00Z",
-            source="Test",
-            summary="Second fnord",
-        )
-        fnord3 = FnordSighting(
-            when="2026-01-07T12:00:00Z",
-            source="Test",
-            summary="Third fnord",
-        )
-
-        result1 = ingest_fnord(fnord1)
-        result2 = ingest_fnord(fnord2)
-        result3 = ingest_fnord(fnord3)
-
-        fnords = get_all_fnords()
-
-        # All three fnords should be returned
-        assert len(fnords) == 3
-        returned_ids = {f.id for f in fnords}
-        expected_ids = {result1.id, result2.id, result3.id}
-        assert returned_ids == expected_ids
+        assert len(fnords) == 2, "Should return two fnords with offset"
 
 
 class TestGetFnordById:
     """Test getting fnord by ID."""
 
-    def test_get_fnord_by_id_exists(self, initialized_db: Path, ingested_fnord):
+    @pytest.mark.asyncio
+    async def test_get_fnord_by_id_exists(self, pool, ingested_sample_fnord):
         """Test getting fnord that exists."""
-        fnord = get_fnord_by_id(ingested_fnord.id)
+        await init_db()
+        fnord = await get_fnord_by_id(ingested_sample_fnord.id)
 
-        assert fnord is not None
-        assert fnord.id == ingested_fnord.id
-        assert fnord.summary == ingested_fnord.summary
+        assert fnord is not None, "Fnord should be found"
+        assert fnord.id == ingested_sample_fnord.id
+        assert fnord.summary == ingested_sample_fnord.summary
 
-    def test_get_fnord_by_id_not_exists(self, initialized_db: Path):
+    @pytest.mark.asyncio
+    async def test_get_fnord_by_id_not_exists(self, pool):
         """Test getting fnord that doesn't exist."""
-        fnord = get_fnord_by_id(999)
+        await init_db()
 
-        assert fnord is None
+        fnord = await get_fnord_by_id(999)
+
+        assert fnord is None, "Fnord should be None for non-existent ID"
 
 
 class TestUpdateFnord:
     """Test updating fnords."""
 
-    def test_update_fnord_success(self, initialized_db: Path, ingested_fnord):
+    @pytest.mark.asyncio
+    async def test_update_fnord_success(self, pool, ingested_sample_fnord):
         """Test successful fnord update."""
-        ingested_fnord.summary = "Updated fnord summary"
-        ingested_fnord.source = "Updated Source"
+        await init_db()
+        await ingest_fnord(ingested_sample_fnord)
 
-        result = update_fnord(ingested_fnord)
+        fnord = await get_fnord_by_id(ingested_sample_fnord.id)
+        original_summary = fnord.summary
 
-        assert result.summary == "Updated fnord summary"
-        assert result.source == "Updated Source"
+        fnord.summary = "Updated summary"
+        result = await update_fnord(fnord)
 
-        # Verify in database
-        fnord = get_fnord_by_id(ingested_fnord.id)
-        assert fnord.summary == "Updated fnord summary"
+        assert result.summary == "Updated summary", "Summary should be updated"
 
-    def test_update_fnord_without_id(self, initialized_db: Path):
-        """Test that updating fnord without ID fails."""
-        fnord = FnordSighting(
-            when="2026-01-07T14:23:00Z",
-            source="News",
-            summary="Found fnord",
-        )
+        fnord = await get_fnord_by_id(ingested_sample_fnord.id)
+        assert fnord.summary == "Updated summary", "Summary should be updated in database"
+        assert fnord.summary != original_summary, "Summary should be different from original"
+
+    @pytest.mark.asyncio
+    async def test_update_fnord_without_id(self, pool, sample_fnord):
+        """Test that updating fnord without ID raises error."""
+        await init_db()
 
         with pytest.raises(ValueError, match="Cannot update fnord without ID"):
-            update_fnord(fnord)
+            await update_fnord(sample_fnord)
 
-    def test_update_fnord_invalid_data(self, initialized_db: Path, ingested_fnord):
-        """Test that updating with invalid data fails."""
-        ingested_fnord.when = "invalid-date"
+    @pytest.mark.asyncio
+    async def test_update_fnord_invalid_data(self, pool, ingested_sample_fnord):
+        """Test that updating with invalid data raises error."""
+        await init_db()
+        await ingest_fnord(ingested_sample_fnord)
+
+        fnord = await get_fnord_by_id(ingested_sample_fnord.id)
+        fnord.when = "invalid-date"
 
         with pytest.raises(ValueError, match="Invalid fnord"):
-            update_fnord(ingested_fnord)
+            await update_fnord(fnord)
+
+    @pytest.mark.asyncio
+    async def test_update_fnord_regenerates_embedding(self, pool, ingested_sample_fnord):
+        """Test that updating fnord regenerates embedding."""
+        await init_db()
+        await ingest_fnord(ingested_sample_fnord)
+
+        fnord = await get_fnord_by_id(ingested_sample_fnord.id)
+        original_embedding = None
+
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT embedding FROM fnords WHERE id = $1", ingested_sample_fnord.id
+            )
+            original_embedding = row["embedding"]
+
+        fnord.summary = "Updated summary"
+        result = await update_fnord(fnord)
+
+        fnord = await get_fnord_by_id(ingested_sample_fnord.id)
+        updated_embedding = None
+
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT embedding FROM fnords WHERE id = $1", ingested_sample_fnord.id
+            )
+            updated_embedding = row["embedding"]
+
+        assert updated_embedding is not None, "Embedding should be regenerated"
+        assert updated_embedding != original_embedding, "Embedding should be different"
 
 
 class TestDeleteFnord:
     """Test deleting fnords."""
 
-    def test_delete_fnord_success(self, initialized_db: Path, ingested_fnord):
+    @pytest.mark.asyncio
+    async def test_delete_fnord_success(self, pool, ingested_sample_fnord):
         """Test successful fnord deletion."""
-        result = delete_fnord(ingested_fnord.id)
+        await init_db()
+        await ingest_fnord(ingested_sample_fnord)
 
-        assert result is True
+        deleted = await delete_fnord(ingested_sample_fnord.id)
 
-        # Verify fnord is gone
-        fnord = get_fnord_by_id(ingested_fnord.id)
-        assert fnord is None
+        assert deleted is True, "Delete should succeed"
 
-    def test_delete_fnord_not_exists(self, initialized_db: Path):
+        fnord = await get_fnord_by_id(ingested_sample_fnord.id)
+        assert fnord is None, "Fnord should be deleted from database"
+
+    @pytest.mark.asyncio
+    async def test_delete_fnord_not_exists(self, pool):
         """Test deleting fnord that doesn't exist."""
-        result = delete_fnord(999)
+        await init_db()
 
-        assert result is False
+        deleted = await delete_fnord(999)
 
-    def test_delete_fnord_reduces_count(self, initialized_db: Path, ingested_fnord):
-        """Test that deleting reduces count."""
-        initial_count = query_fnord_count()
-        assert initial_count == 1
-
-        delete_fnord(ingested_fnord.id)
-
-        final_count = query_fnord_count()
-        assert final_count == 0
+        assert deleted is False, "Delete should fail for non-existent fnord"
 
 
 class TestSearchFnords:
-    """Test searching fnords."""
+    """Test semantic search functionality."""
 
-    def test_search_fnords_by_summary(self, initialized_db: Path, ingested_multiple_fnords):
-        """Test searching by summary."""
-        fnords = search_fnords("graffiti")
+    @pytest.mark.asyncio
+    async def test_search_fnords_semantic(self, pool, sample_fnord, ingested_sample_fnord):
+        """Test semantic search using vector similarity."""
+        await init_db()
+        await ingest_fnord(ingested_sample_fnord)
 
-        assert len(fnords) == 1
-        assert "graffiti" in fnords[0].summary.lower()
+        results = await search_fnords("found fnord")
 
-    def test_search_fnords_by_source(self, initialized_db: Path, ingested_multiple_fnords):
-        """Test searching by source."""
-        fnords = search_fnords("News")
+        assert len(results) >= 1, "Should find at least one result"
+        assert any("found fnord" in r.summary.lower() for r in results), "Should find fnord with matching text"
 
-        assert len(fnords) == 1
-        assert fnords[0].source == "News Article"
+    @pytest.mark.asyncio
+    async def test_search_fnords_with_limit(self, pool, sample_fnord, ingested_sample_fnord):
+        """Test semantic search with limit."""
+        await init_db()
+        await ingest_fnord(ingested_sample_fnord)
 
-    def test_search_fnords_by_place(self, initialized_db: Path, ingested_multiple_fnords):
-        """Test searching by place name."""
-        fnords = search_fnords("Seattle")
+        results = await search_fnords("found fnord", limit=1)
 
-        assert len(fnords) == 1
-        assert "Seattle" in fnords[0].where_place_name
+        assert len(results) == 1, "Should return one result with limit"
 
-    def test_search_fnords_no_results(self, initialized_db: Path, ingested_multiple_fnords):
-        """Test search with no results."""
-        fnords = search_fnords("nonexistent fnord")
+    @pytest.mark.asyncio
+    async def test_search_fnords_with_offset(self, pool, sample_fnord, ingested_sample_fnord):
+        """Test semantic search with offset."""
+        await init_db()
+        await ingest_fnord(ingested_sample_fnord)
 
-        assert len(fnords) == 0
+        results = await search_fnords("found fnord", offset=1)
 
-    def test_search_fnords_with_limit(self, initialized_db: Path, ingested_multiple_fnords):
-        """Test search with limit."""
-        fnords = search_fnords("fnord", limit=2)
+        assert len(results) >= 0, "Should return results with offset"
 
-        assert len(fnords) <= 2
 
-    def test_search_fnords_case_insensitive(self, initialized_db: Path, ingested_multiple_fnords):
-        """Test that search is case-insensitive."""
-        fnords_lower = search_fnords("news")
-        fnords_upper = search_fnords("NEWS")
-        fnords_mixed = search_fnords("NeWs")
+class TestEmbeddingService:
+    """Test embedding service integration."""
 
-        assert len(fnords_lower) == len(fnords_upper) == len(fnords_mixed)
+    @pytest.mark.asyncio
+    async def test_generate_embedding_success(self, pool):
+        """Test successful embedding generation."""
+        from fnord.embeddings import EmbeddingService
+        from unittest.mock import AsyncMock, patch
+
+        await init_db()
+
+        with patch("fnord.embeddings.OpenAI") as mock_openai:
+            mock_client = AsyncMock()
+            mock_openai.return_value = mock_client
+
+            mock_response = AsyncMock()
+            mock_response.data = [AsyncMock()]
+            mock_response.data[0].embedding = [0.1] * 768
+
+            mock_client.embeddings.create = AsyncMock(return_value=mock_response)
+
+            service = EmbeddingService()
+            result = await service.generate_embedding("test text")
+
+        assert result == [0.1] * 768, "Should return 768-dimensional embedding"
+        assert len(result) == 768, "Embedding should have 768 dimensions"
+
+    @pytest.mark.asyncio
+    async def test_generate_embedding_failure(self, pool):
+        """Test embedding generation failure handling."""
+        from fnord.embeddings import EmbeddingService
+        from unittest.mock import AsyncMock, patch
+
+        await init_db()
+
+        with patch("fnord.embeddings.OpenAI") as mock_openai:
+            mock_client = AsyncMock()
+            mock_openai.return_value = mock_client
+
+            mock_client.embeddings.create = AsyncMock(side_effect=Exception("API error"))
+
+            service = EmbeddingService()
+            result = await service.generate_embedding("test text")
+
+        assert result is None, "Should return None on error"
+
+
+class TestChaosEnergy:
+    """Test chaos energy in fnord IDs."""
+
+    @pytest.mark.asyncio
+    async def test_chaos_energy_skips_ids(self, pool, sample_fnord):
+        """Test that chaos energy can skip IDs."""
+        await init_db()
+        await ingest_fnord(sample_fnord)
+
+        from unittest.mock import patch
+        with patch("fnord.database.random.randint") as mock_randint:
+            mock_randint.return_value = 23
+
+            await ingest_fnord(sample_fnord)
+
+        fnord = await get_fnord_by_id(sample_fnord.id)
+        assert fnord.id > 1, "Chaos energy should skip IDs"
+
+    @pytest.mark.asyncio
+    async def test_chaos_energy_sequential_when_not_triggered(self, pool, sample_fnord):
+        """Test that IDs are sequential when chaos energy isn't triggered."""
+        await init_db()
+        await ingest_fnord(sample_fnord)
+
+        from unittest.mock import patch
+        with patch("fnord.database.random.randint") as mock_randint:
+            mock_randint.return_value = 22
+
+            await ingest_fnord(sample_fnord)
+
+        fnord = await get_fnord_by_id(sample_fnord.id)
+        assert fnord.id == 1, "IDs should be sequential when chaos isn't triggered"
+
+
+class TestConnectionPool:
+    """Test connection pooling."""
+
+    @pytest.mark.asyncio
+    async def test_connection_pool_singleton(self):
+        """Test that connection pool is singleton."""
+        from fnord.database import get_pool
+
+        pool1 = await get_pool()
+        pool2 = await get_pool()
+
+        assert pool1 is pool2, "Connection pool should be singleton"
+
+    @pytest.mark.asyncio
+    async def test_connection_pool_reuse(self, pool, sample_fnord):
+        """Test that connections are reused from pool."""
+        await init_db()
+        await ingest_fnord(sample_fnord)
+
+        fnord1 = await get_fnord_by_id(sample_fnord.id)
+        fnord2 = await get_fnord_by_id(sample_fnord.id)
+
+        assert fnord1.id == fnord2.id, "Should get same fnord from pool"

@@ -23,21 +23,30 @@ classifiers = [
     "Topic :: Utilities",
 ]
 requires-python = ">=3.11"
- dependencies = [
-     # MCP for AI integration (fnords speak to machines too!)
-     "mcp",
+  dependencies = [
+      # MCP for AI integration (fnords speak to machines too!)
+      "mcp",
 
-     # Typer for CLI (23 command lines, naturally)
-     "typer",
+      # Typer for CLI (23 command lines, naturally)
+      "typer",
 
-     # Dotenv for config (23 config locations)
-     "python-dotenv",
+      # Dotenv for config (23 config locations)
+      "python-dotenv",
 
-     # Web framework for modern UI (fnords deserve cool web interface)
-     "fastapi",
-     "jinja2",
-     "uvicorn",
- ]
+      # Web framework for modern UI (fnords deserve cool web interface)
+      "fastapi",
+      "jinja2",
+      "uvicorn",
+
+      # PostgreSQL async driver (fnords need a proper database)
+      "asyncpg>=0.29.0",
+
+      # pgvector extension for semantic search (vector similarity!)
+      "pgvector>=0.3.0",
+
+      # LM Studio compatibility (OpenAI-compatible API)
+      "openai>=1.12.0",
+  ]
 
 [project.optional-dependencies]
 dev = [

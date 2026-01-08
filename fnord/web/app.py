@@ -26,6 +26,7 @@ from fnord.database import (
     query_fnord_count,
 )
 from fnord.models import FnordSighting
+from fnord.config import get_config
 
 app = FastAPI(title="🍎 Fnord Tracker 🍎", version="23.5.0")
 
@@ -45,11 +46,11 @@ async def index(request: Request, page: int = 1, search: Optional[str] = None):
     offset = (page - 1) * limit
 
     if search:
-        fnords = search_fnords(search, limit=limit, offset=offset)
+        fnords = await search_fnords(search, limit=limit, offset=offset)
     else:
-        fnords = get_all_fnords(limit=limit, offset=offset)
+        fnords = await get_all_fnords(limit=limit, offset=offset)
 
-    total_count = query_fnord_count()
+    total_count = await query_fnord_count()
     total_pages = (total_count + limit - 1) // limit
 
     return templates.TemplateResponse(
@@ -72,11 +73,7 @@ async def detail(request: Request, fnord_id: int):
 
     The fnord reveals itself in full glory.
     """
-    from fnord.database import get_db_connection
-
-    fnord = None
-    with get_db_connection() as conn:
-        fnord = get_fnord_by_id(fnord_id)
+    fnord = await get_fnord_by_id(fnord_id)
 
     if not fnord:
         raise HTTPException(status_code=404, detail="Fnord not found!")
@@ -124,91 +121,21 @@ async def update_fnord_route(
 
     The fnord evolves.
     """
-    from fnord.database import get_db_connection
-
-    fnord = None
-    with get_db_connection() as conn:
-        fnord = get_fnord_by_id(fnord_id)
+    fnord = await get_fnord_by_id(fnord_id)
 
     if not fnord:
         raise HTTPException(status_code=404, detail="Fnord not found!")
 
-    # Parse logical_fallacies if provided
-    logical_fallacies_list = None
-    if logical_fallacies and logical_fallacies.strip():
-        try:
-            parsed = json.loads(logical_fallacies)
-            if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
-                logical_fallacies_list = parsed
-        except json.JSONDecodeError:
-            pass
-
-    # Parse notes if provided
-    notes_dict = None
-    if notes and notes.strip():
-        try:
-            notes_dict = json.loads(notes)
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="Invalid JSON in notes!")
-
-    # Update the fnord
-    fnord.when = when
-    fnord.where_place_name = where_place_name if where_place_name else None
-    fnord.source = source
-    fnord.summary = summary
-    fnord.logical_fallacies = logical_fallacies_list
-    fnord.notes = notes_dict
-
-    update_fnord_db(fnord)
-
-    # Redirect back to detail page
-    return RedirectResponse(f"/fnord/{fnord_id}", status_code=303)
-
-
-@app.post("/fnord/new")
-async def create_fnord(
-    request: Request,
-    when: str = Form(...),
-    where_place_name: Optional[str] = Form(None),
-    source: str = Form(...),
-    summary: str = Form(...),
-    logical_fallacies: Optional[str] = Form(None),
-    notes: Optional[str] = Form(None),
-):
-    """
-    Create a new fnord.
-
-    A new fnord enters the realm.
-    """
-    # Parse logical_fallacies if provided
-    logical_fallacies_list = None
-    if logical_fallacies and logical_fallacies.strip():
-        try:
-            parsed = json.loads(logical_fallacies)
-            if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
-                logical_fallacies_list = parsed
-        except json.JSONDecodeError:
-            pass
-
-    # Parse notes if provided
-    notes_dict = None
-    if notes and notes.strip():
-        try:
-            notes_dict = json.loads(notes)
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="Invalid JSON in notes!")
-
-    # Create the fnord
-    fnord = FnordSighting(
-        when=when,
-        where_place_name=where_place_name if where_place_name else None,
-        source=source,
-        summary=summary,
-        logical_fallacies=logical_fallacies_list,
-        notes=notes_dict,
+    return templates.TemplateResponse(
+        "detail.html",
+        {
+            "request": request,
+            "fnord": fnord,
+            "is_new": False,
+        },
     )
 
-    result = ingest_fnord(fnord)
+    result = await ingest_fnord(fnord)
 
     # Redirect to detail page
     return RedirectResponse(f"/fnord/{result.id}", status_code=303)
@@ -221,7 +148,7 @@ async def delete_fnord_route(request: Request, fnord_id: int):
 
     The fnord returns to the void.
     """
-    delete_fnord_db(fnord_id)
+    await delete_fnord_db(fnord_id)
 
     # Redirect to home
     return RedirectResponse("/", status_code=303)
@@ -234,7 +161,7 @@ async def stats():
 
     Numbers that fnords care about.
     """
-    count = query_fnord_count()
+    count = await query_fnord_count()
 
     return {
         "total_fnords": count,
@@ -251,14 +178,14 @@ async def fnord_events():
     The fnords speak! Listen to their whispers.
     """
     async def event_stream():
-        last_count = query_fnord_count()
+        last_count = await query_fnord_count()
         while True:
             await asyncio.sleep(2)
-            current_count = query_fnord_count()
+            current_count = await query_fnord_count()
 
             if current_count > last_count:
                 new_count = current_count - last_count
-                new_fnords = get_all_fnords(limit=new_count, offset=0)
+                new_fnords = await get_all_fnords(limit=new_count, offset=0)
 
                 for fnord in new_fnords:
                     template = templates.get_template("fnord_card.html")

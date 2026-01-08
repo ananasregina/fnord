@@ -339,7 +339,7 @@ async def _handle_ingest_fnord(arguments: dict[str, Any]) -> list[TextContent]:
         )
 
         # Ingest into database
-        result = ingest_fnord(fnord)
+        result = await ingest_fnord(fnord)
 
         message = f"Fnord ingested successfully! ID: {result.id}. The fnord has been recorded. Hail Discordia!"
 
@@ -367,7 +367,7 @@ async def _handle_list_fnords(arguments: dict[str, Any]) -> list[TextContent]:
     limit = arguments.get("limit")
     offset = arguments.get("offset", 0)
 
-    fnords = get_all_fnords(limit=limit, offset=offset)
+    fnords = await get_all_fnords(limit=limit, offset=offset)
 
     # Convert to JSON array
     fnords_json = [f.to_dict() for f in fnords]
@@ -394,7 +394,7 @@ async def _handle_get_fnord_by_id(arguments: dict[str, Any]) -> list[TextContent
     if fnord_id is None:
         return [TextContent(type="text", text="Error: ID is required")]
 
-    fnord = get_fnord_by_id(fnord_id)
+    fnord = await get_fnord_by_id(fnord_id)
 
     if fnord is None:
         return [TextContent(type="text", text=f"Fnord with ID {fnord_id} not found.")]

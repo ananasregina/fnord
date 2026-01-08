@@ -1,110 +1,138 @@
 """
 Fnord Database Module
 
-The fnords must be stored somewhere. SQLite is their sacred vault.
-
-This module handles all database operations: create, read, update, delete fnords.
+The fnords are stored in PostgreSQL with pgvector for semantic search.
+Chaos energy still applies - 1/23 chance to skip IDs!
 """
 
-import sqlite3
+import asyncpg
+from pgvector.asyncpg import register_vector
 import json
-from pathlib import Path
-from typing import Optional, List
-from contextlib import contextmanager
 import logging
+from typing import Optional, List
 from datetime import datetime
 import random
 
 from fnord.config import get_config
 from fnord.models import FnordSighting
+from fnord.embeddings import EmbeddingService
 
 logger = logging.getLogger(__name__)
 
-# Chaos energy: 1/23 chance to skip IDs (making them even more sacred)
-# The fnords demand occasional chaos to maintain the sacred nature of their IDs
-CHAOS_PROBABILITY = 23  # 1 in 23 chance
+# Chaos energy: 1/23 chance to skip IDs
+CHAOS_PROBABILITY = 23
 CHAOS_MIN_SKIP = 1
 CHAOS_MAX_SKIP = 23
 
+# Global connection pool and embedding service
+_pool = None
+_embedding_service = None
 
-@contextmanager
-def get_db_connection():
+
+async def get_pool():
     """
-    Get a database connection context manager.
+    Get or create async PostgreSQL connection pool.
 
-    The fnords demand proper connection handling.
-
-    Yields:
-        sqlite3.Connection: Database connection
+    Returns:
+        asyncpg.Pool: Connection pool
     """
-    config = get_config()
-    db_path = config.get_db_path()
-
-    # Ensure parent directory exists
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row  # Access columns by name
-
-    # Enable WAL mode for better concurrency (fnords are social creatures)
-    conn.execute("PRAGMA journal_mode=WAL")
-
-    try:
-        yield conn
-    finally:
-        conn.close()
+    global _pool
+    if _pool is None:
+        config = get_config()
+        _pool = await asyncpg.create_pool(config.get_postgres_uri())
+        logger.debug("PostgreSQL connection pool created")
+    return _pool
 
 
-def init_db() -> None:
+async def close_pool():
     """
-    Initialize the fnord database schema.
+    Close PostgreSQL connection pool.
 
-    Creates the fnords table if it doesn't exist.
-    Adds new columns if they don't exist (for migrations).
+    Must be called when done to prevent event loop issues.
     """
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
+    global _pool
+    if _pool is not None:
+        try:
+            await _pool.close()
+        except Exception:
+            pass
+        _pool = None
+        logger.debug("PostgreSQL connection pool closed")
 
-        # Create the sacred fnords table
-        cursor.execute(
-            """
+
+async def get_embedding_service():
+    """
+    Get or create embedding service.
+
+    Returns:
+        EmbeddingService: Embedding service instance
+    """
+    global _embedding_service
+    if _embedding_service is None:
+        _embedding_service = EmbeddingService()
+    return _embedding_service
+
+
+async def init_db():
+    """
+    Initialize PostgreSQL database schema with pgvector.
+
+    Creates fnords table, embedding column, and vector index.
+    """
+    global _pool
+    if _pool is not None:
+        await _pool.close()
+        _pool = None
+
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        # Enable pgvector extension
+        await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        await register_vector(conn)
+        logger.info("pgvector extension enabled")
+
+        # Create fnords table
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS fnords (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                "when" TEXT NOT NULL,
+                id SERIAL PRIMARY KEY,
+                "when" TIMESTAMP NOT NULL,
                 where_place_name TEXT,
                 source TEXT NOT NULL,
                 summary TEXT NOT NULL,
-                notes TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                notes JSONB,
+                logical_fallacies JSONB,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
             )
-        """
-        )
+        """)
 
-        # Create indexes for common queries
-        # The fnords appreciate speed
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_fnords_when ON fnords("when")')
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_fnords_source ON fnords(source)")
+        # Add embedding column if not exists
+        config = get_config()
+        dim = config.get_embedding_config()["dimension"]
+        await conn.execute(f"""
+            ALTER TABLE fnords
+            ADD COLUMN IF NOT EXISTS embedding vector({dim})
+        """)
+        logger.debug(f"Embedding column added ({dim} dimensions)")
 
-        # Migration: Add logical_fallacies column if it doesn't exist
-        cursor.execute("PRAGMA table_info(fnords)")
-        columns = {row[1] for row in cursor.fetchall()}
+        # Create IVFFlat index for fast vector similarity search
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_fnords_embedding
+            ON fnords USING ivfflat (embedding vector_cosine_ops)
+        """)
+        logger.debug("Vector index created")
 
-        if "logical_fallacies" not in columns:
-            cursor.execute("ALTER TABLE fnords ADD COLUMN logical_fallacies TEXT")
-            logger.info("Added logical_fallacies column to fnords table")
+        # Create other indexes
+        await conn.execute('CREATE INDEX IF NOT EXISTS idx_fnords_when ON fnords("when")')
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_fnords_source ON fnords(source)")
 
-        conn.commit()
-
-        logger.debug("Database initialized. The fnords have a home now.")
+    logger.info("PostgreSQL database initialized. The fnords have a new home!")
 
 
-def ingest_fnord(fnord: FnordSighting) -> FnordSighting:
+async def ingest_fnord(fnord: FnordSighting) -> FnordSighting:
     """
-    Ingest a fnord into the database.
-
-    Sometimes the fnords demand chaos energy: 1/23 chance to skip a random number
-    of IDs (1-23), making the IDs even more sacred through the power of gaps.
+    Ingest a fnord with semantic embedding.
 
     Args:
         fnord: The fnord sighting to store
@@ -115,78 +143,65 @@ def ingest_fnord(fnord: FnordSighting) -> FnordSighting:
     Raises:
         ValueError: If fnord validation fails
     """
-    # Validate the fnord before storing
+    # Validate the fnord
     errors = fnord.validate()
     if errors:
         error_msg = f"Invalid fnord: {', '.join(errors)}"
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
+    pool = await get_pool()
+    emb_service = await get_embedding_service()
 
-        # Convert notes to JSON string if present
-        notes_json = None
-        if fnord.notes:
-            notes_json = json.dumps(fnord.notes)
+    # Prepare text for embedding (combine searchable fields)
+    search_text = f"{fnord.summary} {fnord.source}"
+    if fnord.where_place_name:
+        search_text += f" {fnord.where_place_name}"
 
-        # Convert logical_fallacies to JSON string if present
-        logical_fallacies_json = None
-        if fnord.logical_fallacies:
-            logical_fallacies_json = json.dumps(fnord.logical_fallacies)
+    # Generate embedding
+    embedding = await emb_service.generate_embedding(search_text)
 
+    if embedding is None:
+        raise ValueError("Failed to generate embedding for fnord")
+
+    async with pool.acquire() as conn:
         # Check for chaos energy: 1/23 chance to skip IDs
-        # The fnords occasionally demand gaps to make their IDs more sacred
         if random.randint(1, CHAOS_PROBABILITY) == CHAOS_PROBABILITY:
-            # Chaos! Skip a random number of IDs (1-23)
+            # Chaos! Skip a random number of IDs
             skip_amount = random.randint(CHAOS_MIN_SKIP, CHAOS_MAX_SKIP)
 
             # Get current max ID
-            cursor.execute("SELECT COALESCE(MAX(id), 0) FROM fnords")
-            max_id = cursor.fetchone()[0]
+            result = await conn.fetchval("SELECT COALESCE(MAX(id), 0) FROM fnords")
+            max_id = result
 
             # Calculate the sacred gap ID
             target_id = max_id + 1 + skip_amount
 
             # Insert with explicit ID (chaos mode!)
-            cursor.execute(
-                """
-                INSERT INTO fnords (id, "when", where_place_name, source, summary, notes, logical_fallacies)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    target_id,
-                    fnord.when,
-                    fnord.where_place_name,
-                    fnord.source,
-                    fnord.summary,
-                    notes_json,
-                    logical_fallacies_json,
-                ),
-            )
+            # Convert datetime string to datetime object (offset-naive)
+            when_str = fnord.when.replace("Z", "+00:00")
+            when_dt = datetime.fromisoformat(when_str).replace(tzinfo=None)
+            await conn.execute("""
+                INSERT INTO fnords (id, "when", where_place_name, source, summary, notes, logical_fallacies, embedding)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            """, target_id, when_dt, fnord.where_place_name, fnord.source, fnord.summary,
+                json.dumps(fnord.notes) if fnord.notes else None,
+                json.dumps(fnord.logical_fallacies) if fnord.logical_fallacies else None, embedding)
 
             fnord_id = target_id
+            logger.info(f"Chaos energy! Skipped to ID: {fnord_id}")
         else:
-            # Normal insertion - let SQLite assign the next sequential ID
-            cursor.execute(
-                """
-                INSERT INTO fnords ("when", where_place_name, source, summary, notes, logical_fallacies)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    fnord.when,
-                    fnord.where_place_name,
-                    fnord.source,
-                    fnord.summary,
-                    notes_json,
-                    logical_fallacies_json,
-                ),
-            )
-
-            # Get the assigned ID
-            fnord_id = cursor.lastrowid
-
-        conn.commit()
+            # Normal insertion - let PostgreSQL assign the next ID
+            # Convert datetime string to datetime object (offset-naive)
+            when_str = fnord.when.replace("Z", "+00:00")
+            when_dt = datetime.fromisoformat(when_str).replace(tzinfo=None)
+            fnord_id = await conn.fetchval("""
+                INSERT INTO fnords ("when", where_place_name, source, summary, notes, logical_fallacies, embedding)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                RETURNING id
+            """, when_dt, fnord.where_place_name, fnord.source, fnord.summary,
+                json.dumps(fnord.notes) if fnord.notes else None,
+                json.dumps(fnord.logical_fallacies) if fnord.logical_fallacies else None, embedding)
 
         logger.info(f"Fnord ingested with ID: {fnord_id} - Hail Discordia!")
 
@@ -195,48 +210,45 @@ def ingest_fnord(fnord: FnordSighting) -> FnordSighting:
         return fnord
 
 
-def query_fnord_count() -> int:
+async def query_fnord_count() -> int:
     """
     Query the total number of fnords.
 
     Returns:
         int: The sacred count of fnords
     """
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
+    pool = await get_pool()
 
-        cursor.execute("SELECT COUNT(*) as count FROM fnords")
-        result = cursor.fetchone()
+    async with pool.acquire() as conn:
+        result = await conn.fetchval("SELECT COUNT(*) FROM fnords")
+        count = result if result is not None else 0
 
-        count = result["count"] if result else 0
-
-        logger.debug(f"Fnord count queried: {count}")
+        #logger.debug(f"Fnord count queried: {count}")
         return count
 
 
-def get_all_fnords(limit: Optional[int] = None, offset: int = 0) -> List[FnordSighting]:
+async def get_all_fnords(limit: Optional[int] = None, offset: int = 0) -> List[FnordSighting]:
     """
-    Get all fnords from the database.
+    Get all fnords from the database with pagination.
 
     Args:
-        limit: Maximum number of fnords to return (None for all)
-        offset: Number of fnords to skip (for pagination)
+        limit: Maximum number of fnords to return
+        offset: Number of fnords to skip
 
     Returns:
         List[FnordSighting]: List of fnord sightings
     """
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
+    pool = await get_pool()
 
+    async with pool.acquire() as conn:
         query = 'SELECT * FROM fnords ORDER BY created_at DESC'
 
         if limit is not None:
-            query += " LIMIT ? OFFSET ?"
-            cursor.execute(query, (limit, offset))
+            query += " LIMIT $1 OFFSET $2"
+            rows = await conn.fetch(query, limit, offset)
         else:
-            cursor.execute(query)
-
-        rows = cursor.fetchall()
+            query += " OFFSET $1"
+            rows = await conn.fetch(query, offset)
 
         fnords = [_row_to_fnord(row) for row in rows]
 
@@ -244,7 +256,7 @@ def get_all_fnords(limit: Optional[int] = None, offset: int = 0) -> List[FnordSi
         return fnords
 
 
-def get_fnord_by_id(fnord_id: int) -> Optional[FnordSighting]:
+async def get_fnord_by_id(fnord_id: int) -> Optional[FnordSighting]:
     """
     Get a fnord by its sacred ID.
 
@@ -254,20 +266,19 @@ def get_fnord_by_id(fnord_id: int) -> Optional[FnordSighting]:
     Returns:
         FnordSighting: The fnord, or None if not found
     """
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
+    pool = await get_pool()
 
-        cursor.execute("SELECT * FROM fnords WHERE id = ?", (fnord_id,))
-        row = cursor.fetchone()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM fnords WHERE id = $1", fnord_id)
 
         if row:
             return _row_to_fnord(row)
         return None
 
 
-def update_fnord(fnord: FnordSighting) -> FnordSighting:
+async def update_fnord(fnord: FnordSighting) -> FnordSighting:
     """
-    Update a fnord in the database.
+    Update a fnord in the database with new embedding.
 
     Args:
         fnord: The fnord to update (must have an ID)
@@ -288,46 +299,40 @@ def update_fnord(fnord: FnordSighting) -> FnordSighting:
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
+    pool = await get_pool()
+    emb_service = await get_embedding_service()
 
-        # Convert notes to JSON string if present
-        notes_json = None
-        if fnord.notes:
-            notes_json = json.dumps(fnord.notes)
+    # Prepare text for embedding
+    search_text = f"{fnord.summary} {fnord.source}"
+    if fnord.where_place_name:
+        search_text += f" {fnord.where_place_name}"
 
-        # Convert logical_fallacies to JSON string if present
-        logical_fallacies_json = None
-        if fnord.logical_fallacies:
-            logical_fallacies_json = json.dumps(fnord.logical_fallacies)
+    # Generate new embedding
+    embedding = await emb_service.generate_embedding(search_text)
 
+    if embedding is None:
+        raise ValueError("Failed to generate embedding for fnord")
+
+    async with pool.acquire() as conn:
         # Update the fnord
-        cursor.execute(
-            """
+        # Convert datetime string to datetime object (offset-naive)
+        when_str = fnord.when.replace("Z", "+00:00")
+        when_dt = datetime.fromisoformat(when_str).replace(tzinfo=None)
+        await conn.execute("""
             UPDATE fnords
-            SET "when" = ?, where_place_name = ?, source = ?,
-                summary = ?, notes = ?, logical_fallacies = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-        """,
-            (
-                fnord.when,
-                fnord.where_place_name,
-                fnord.source,
-                fnord.summary,
-                notes_json,
-                logical_fallacies_json,
-                fnord.id,
-            ),
-        )
-
-        conn.commit()
+            SET "when" = $1, where_place_name = $2, source = $3, summary = $4,
+                notes = $5, logical_fallacies = $6, embedding = $7, updated_at = NOW()
+            WHERE id = $8
+        """, when_dt, fnord.where_place_name, fnord.source, fnord.summary,
+            json.dumps(fnord.notes) if fnord.notes else None,
+            json.dumps(fnord.logical_fallacies) if fnord.logical_fallacies else None, embedding, fnord.id)
 
         logger.info(f"Fnord updated: ID {fnord.id} - The fnord has evolved!")
 
         return fnord
 
 
-def delete_fnord(fnord_id: int) -> bool:
+async def delete_fnord(fnord_id: int) -> bool:
     """
     Delete a fnord from the database.
 
@@ -337,15 +342,13 @@ def delete_fnord(fnord_id: int) -> bool:
     Returns:
         bool: True if deleted, False if not found
     """
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
+    pool = await get_pool()
 
-        cursor.execute("DELETE FROM fnords WHERE id = ?", (fnord_id,))
-
-        deleted = cursor.rowcount > 0
+    async with pool.acquire() as conn:
+        result = await conn.execute("DELETE FROM fnords WHERE id = $1", fnord_id)
+        deleted = result == "DELETE 1"
 
         if deleted:
-            conn.commit()
             logger.info(f"Fnord deleted: ID {fnord_id} - It has vanished into the void!")
         else:
             logger.warning(f"Fnord not found for deletion: ID {fnord_id}")
@@ -353,13 +356,16 @@ def delete_fnord(fnord_id: int) -> bool:
         return deleted
 
 
-def search_fnords(
-    query: str, limit: Optional[int] = None, offset: Optional[int] = None
+async def search_fnords(
+    query: str,
+    limit: Optional[int] = None,
+    offset: int = 0,
 ) -> List[FnordSighting]:
     """
-    Search fnords by text query.
+    Semantic search using vector similarity.
 
-    Searches in summary and source fields.
+    Searches fnords by embedding similarity instead of exact text.
+    The fnords understand meaning now!
 
     Args:
         query: Search query
@@ -369,44 +375,43 @@ def search_fnords(
     Returns:
         List[FnordSighting]: Matching fnords
     """
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
+    pool = await get_pool()
+    emb_service = await get_embedding_service()
 
-        sql_query = """
-            SELECT * FROM fnords
-            WHERE summary LIKE ? OR source LIKE ? OR where_place_name LIKE ?
-            ORDER BY "when" DESC
+    # Generate embedding for query
+    query_embedding = await emb_service.generate_embedding(query)
+
+    if query_embedding is None:
+        logger.error(f"Failed to generate embedding for query: {query}")
+        return []
+
+    async with pool.acquire() as conn:
+        # Register vector codec for this connection
+        await register_vector(conn)
+
+        # Vector similarity search using cosine distance (<=>)
+        sql = """
+            SELECT *, embedding <=> $1 AS distance
+            FROM fnords
+            ORDER BY distance
         """
 
-        search_pattern = f"%{query}%"
-
         if limit is not None:
-            sql_query += " LIMIT ?"
-            if offset is not None:
-                sql_query += " OFFSET ?"
-                cursor.execute(
-                    sql_query, (search_pattern, search_pattern, search_pattern, limit, offset)
-                )
-            else:
-                cursor.execute(sql_query, (search_pattern, search_pattern, search_pattern, limit))
+            sql += " LIMIT $2 OFFSET $3"
+            rows = await conn.fetch(sql, query_embedding, limit, offset)
         else:
-            if offset is not None:
-                sql_query += " OFFSET ?"
-                cursor.execute(sql_query, (search_pattern, search_pattern, search_pattern, offset))
-            else:
-                cursor.execute(sql_query, (search_pattern, search_pattern, search_pattern))
+            sql += " OFFSET $2"
+            rows = await conn.fetch(sql, query_embedding, offset)
 
-        rows = cursor.fetchall()
+        results = [_row_to_fnord(row) for row in rows]
 
-        fnords = [_row_to_fnord(row) for row in rows]
-
-        logger.debug(f"Search for '{query}' returned {len(fnords)} fnords")
-        return fnords
+        logger.debug(f"Semantic search for '{query}' returned {len(results)} fnords")
+        return results
 
 
-def _row_to_fnord(row: sqlite3.Row) -> FnordSighting:
+def _row_to_fnord(row) -> FnordSighting:
     """
-    Convert a database row to a FnordSighting object.
+    Convert a PostgreSQL row to a FnordSighting object.
 
     Args:
         row: Database row
@@ -414,32 +419,12 @@ def _row_to_fnord(row: sqlite3.Row) -> FnordSighting:
     Returns:
         FnordSighting: The fnord object
     """
-    # Parse notes JSON
-    notes = None
-    if row["notes"]:
-        try:
-            notes = json.loads(row["notes"])
-        except json.JSONDecodeError:
-            notes = None
-
-    # Parse logical_fallacies JSON
-    logical_fallacies = None
-    try:
-        logical_fallacies_data = row["logical_fallacies"]
-        if logical_fallacies_data:
-            parsed = json.loads(logical_fallacies_data)
-            # Validate it's a list of strings
-            if isinstance(parsed, list) and all(isinstance(item, str) for item in parsed):
-                logical_fallacies = parsed
-    except (KeyError, json.JSONDecodeError):
-        logical_fallacies = None
-
     return FnordSighting(
         id=row["id"],
-        when=row["when"],
+        when=row["when"].isoformat() if row["when"] else "",
         where_place_name=row["where_place_name"],
         source=row["source"],
         summary=row["summary"],
-        notes=notes,
-        logical_fallacies=logical_fallacies,
+        notes=row["notes"],
+        logical_fallacies=row["logical_fallacies"],
     )

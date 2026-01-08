@@ -3,11 +3,9 @@ Fnord Configuration Module
 
 The fnords live in many places. This module helps find them.
 
-Configuration priority (most important first):
-1. FNORD_DB_PATH environment variable
-2. FNORD_DB_PATH in .env file
-3. ./fnord.db (current directory)
-4. ~/.config/fnord/fnord.db (the fnord sanctuary)
+Configuration priority:
+- PostgreSQL: FNORD_DB_HOST, FNORD_DB_PORT, FNORD_DB_NAME, FNORD_DB_USER, FNORD_DB_PASSWORD
+- LM Studio: EMBEDDING_URL, EMBEDDING_MODEL, EMBEDDING_DIMENSION
 """
 
 import os
@@ -39,38 +37,35 @@ class Config:
 
         logger.debug("Configuration loaded. The fnords are pleased.")
 
-    def get_db_path(self) -> Path:
+    def get_postgres_uri(self) -> str:
         """
-        Get the fnord database path.
-
-        Follows the sacred configuration hierarchy:
-        1. FNORD_DB_PATH environment variable (highest priority)
-        2. ./fnord.db in current directory
-        3. ~/.config/fnord/fnord.db (the fnord sanctuary)
+        Get PostgreSQL connection URI.
 
         Returns:
-            Path: The path to the fnord database
+            str: PostgreSQL connection URI
         """
-        # Priority 1: Environment variable
-        if env_path := os.getenv("FNORD_DB_PATH"):
-            path = Path(env_path).expanduser().absolute()
-            logger.debug(f"Using database from FNORD_DB_PATH: {path}")
-            return path
+        host = os.getenv("FNORD_DB_HOST", "localhost")
+        port = os.getenv("FNORD_DB_PORT", "5432")
+        dbname = os.getenv("FNORD_DB_NAME", "fnord")
+        user = os.getenv("FNORD_DB_USER", "fnord_user")
+        password = os.getenv("FNORD_DB_PASSWORD", "")
 
-        # Priority 2: Current directory
-        current_dir = Path.cwd()
-        local_db = current_dir / "fnord.db"
-        if local_db.exists():
-            logger.debug(f"Using local database: {local_db}")
-            return local_db
+        uri = f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+        logger.debug(f"PostgreSQL URI: {uri}")
+        return uri
 
-        # Priority 3: Config directory (the fnord sanctuary)
-        config_dir = self._get_config_dir()
-        config_dir.mkdir(parents=True, exist_ok=True)
-        config_db = config_dir / "fnord.db"
+    def get_embedding_config(self) -> dict[str, str | int]:
+        """
+        Get LM Studio embedding configuration.
 
-        logger.debug(f"Using config directory database: {config_db}")
-        return config_db
+        Returns:
+            dict: Embedding config with url, model, and dimension
+        """
+        return {
+            "url": os.getenv("EMBEDDING_URL", "http://127.0.0.1:1338/v1"),
+            "model": os.getenv("EMBEDDING_MODEL", "text-embedding-nomic-embed-text-v1.5-embedding"),
+            "dimension": int(os.getenv("EMBEDDING_DIMENSION", "768")),
+        }
 
     def get_config_dir(self) -> Path:
         """

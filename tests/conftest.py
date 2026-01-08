@@ -1,103 +1,108 @@
 """
 Pytest configuration and shared fixtures for fnord tracker tests.
 
-Testing the fnords is sacred work. They demand verification!
+Testing fnords is sacred work. They demand verification!
+
+PostgreSQL + pgvector + async setup
 """
 
 import pytest
-import sqlite3
-from pathlib import Path
-import tempfile
+import asyncio
 import os
-from typing import Generator
+from typing import Generator, AsyncGenerator
+from unittest.mock import AsyncMock, MagicMock
 
+from fnord.database import init_db, get_pool
 from fnord.models import FnordSighting
-from fnord.database import init_db, ingest_fnord, get_db_connection
 from fnord.config import Config
+from fnord.embeddings import EmbeddingService
 
 
-@pytest.fixture
-def temp_db_path(tmp_path: Path) -> Generator[Path, None, None]:
+@pytest.fixture(scope="session")
+async def pool():
     """
-    Fixture providing a temporary database path.
-
-    The fnords need a temporary home for testing.
+    Create a test PostgreSQL connection pool.
 
     Yields:
-        Path: Path to temporary database file
+        asyncpg.Pool: Test connection pool
     """
-    db_path = tmp_path / "test_fnord.db"
-    yield db_path
-
-    # Cleanup happens automatically with tmp_path
+    pool = await get_pool()
+    yield pool
+    await pool.close()
 
 
 @pytest.fixture
-def temp_config(temp_db_path: Path, monkeypatch: pytest.MonkeyPatch) -> Config:
+async def initialized_pool(pool):
     """
-    Fixture providing a test configuration with temporary database.
-
-    Args:
-        temp_db_path: Temporary database path
-        monkeypatch: pytest fixture for patching environment
-
-    Returns:
-        Config: Test configuration
-    """
-    # Monkeypatch the database path
-    monkeypatch.setenv("FNORD_DB_PATH", str(temp_db_path))
-
-    # Return a new config instance
-    return Config()
-
-
-@pytest.fixture
-def initialized_db(temp_db_path: Path) -> Generator[Path, None, None]:
-    """
-    Fixture providing an initialized temporary database.
+    Fixture providing an initialized database with schema.
 
     The fnords are ready to be tested!
 
     Yields:
-        Path: Path to initialized temporary database
+        pool: Initialized connection pool
     """
-    # Monkeypatch for this test
-    old_env = os.environ.get("FNORD_DB_PATH")
-    os.environ["FNORD_DB_PATH"] = str(temp_db_path)
+    async with pool.acquire() as conn:
+        await init_db()
 
-    try:
-        # Initialize the database
-        init_db()
-
-        yield temp_db_path
-
-    finally:
-        # Restore environment
-        if old_env is None:
-            os.environ.pop("FNORD_DB_PATH", None)
-        else:
-            os.environ["FNORD_DB_PATH"] = old_env
-
-        # Cleanup database file
-        if temp_db_path.exists():
-            temp_db_path.unlink()
-
-        # Cleanup WAL files
-        for wal_file in temp_db_path.parent.glob(f"{temp_db_path.stem}*"):
-            wal_file.unlink()
+    yield pool
 
 
 @pytest.fixture
-def sample_fnord() -> FnordSighting:
+def mock_config(monkeypatch) -> Config:
+    """
+    Mock configuration for testing.
+
+    Args:
+        monkeypatch: pytest fixture for patching environment
+
+    Returns:
+        Config: Test configuration with mocked environment
+    """
+    # Set test database name
+    monkeypatch.setenv("FNORD_DB_NAME", "test_fnord")
+    monkeypatch.setenv("FNORD_DB_HOST", "localhost")
+    monkeypatch.setenv("FNORD_DB_PORT", "5432")
+    monkeypatch.setenv("FNORD_DB_USER", "test_user")
+    monkeypatch.setenv("FNORD_DB_PASSWORD", "test_password")
+
+    # Mock LM Studio config
+    monkeypatch.setenv("EMBEDDING_URL", "http://localhost:9999/v1")
+    monkeypatch.setenv("EMBEDDING_MODEL", "test-model")
+    monkeypatch.setenv("EMBEDDING_DIMENSION", "768")
+
+    return Config()
+
+
+@pytest.fixture
+async def clean_pool(pool):
+    """
+    Clean test database and recreate.
+
+    Yields:
+        pool: Clean connection pool
+    """
+    async with pool.acquire() as conn:
+        # Drop all tables
+        await conn.execute("DROP TABLE IF EXISTS fnords CASCADE")
+        await conn.execute("DROP TABLE IF EXISTS test_table CASCADE")
+
+    yield pool
+
+    # Reinitialize
+    await init_db()
+
+
+@pytest.fixture
+async def sample_fnord():
     """
     Fixture providing a sample fnord sighting.
 
     A standard fnord for testing purposes.
 
-    Returns:
+    Yields:
         FnordSighting: Sample fnord
     """
-    return FnordSighting(
+    yield FnordSighting(
         when="2026-01-07T14:23:00Z",
         where_place_name="Seattle, WA",
         source="News Article",
@@ -107,7 +112,35 @@ def sample_fnord() -> FnordSighting:
 
 
 @pytest.fixture
-def multiple_fnords() -> list[FnordSighting]:
+async def ingested_sample_fnord(sample_fnord, pool):
+    """
+    Fixture providing an ingested fnord.
+
+    Yields:
+        FnordSighting: Ingested fnord with ID
+    """
+    result = await ingested_fnord.fnord(sample_fnord)
+    yield result
+
+
+async def ingested_fnord(sample_fnord, pool):
+    """
+    Helper fixture - ingest a fnord into database.
+
+    Args:
+        sample_fnord: The fnord to ingest
+        pool: Connection pool
+
+    Returns:
+        FnordSighting: The ingested fnord with ID
+    """
+    from fnord.database import ingest_fnord as ingest_fnord_fn
+
+    return await ingest_fnord_fn(sample_fnord)
+
+
+@pytest.fixture
+def multiple_sample_fnords() -> list[FnordSighting]:
     """
     Fixture providing multiple sample fnord sightings.
 
@@ -134,7 +167,7 @@ def multiple_fnords() -> list[FnordSighting]:
         FnordSighting(
             when="2026-01-05T22:30:00Z",
             source="Code",
-            summary="Debug log contained the word fnord",
+            summary="Debug log contained word fnord",
             notes={"file": "app.py", "line": 42},
         ),
         FnordSighting(
@@ -153,46 +186,16 @@ def multiple_fnords() -> list[FnordSighting]:
 
 
 @pytest.fixture
-def ingested_fnord(
-    initialized_db: Path, sample_fnord: FnordSighting
-) -> Generator[FnordSighting, None, None]:
-    """
-    Fixture providing a fnord that has been ingested into the database.
-
-    The fnord is now in the sacred database!
-
-    Yields:
-        FnordSighting: Ingested fnord with ID
-    """
-    result = ingest_fnord(sample_fnord)
-    yield result
-
-
-@pytest.fixture
-def ingested_multiple_fnords(
-    initialized_db: Path, multiple_fnords: list[FnordSighting]
-) -> Generator[list[FnordSighting], None, None]:
+async def ingested_multiple_fnords(multiple_sample_fnords, pool):
     """
     Fixture providing multiple ingested fnords.
-
-    Many fnords in the database!
 
     Yields:
         list[FnordSighting]: List of ingested fnords with IDs
     """
-    results = [ingest_fnord(fnord) for fnord in multiple_fnords]
+    results = []
+    for fnord in multiple_sample_fnords:
+        result = await ingested_fnord(fnord, pool)
+        results.append(result)
+
     yield results
-
-
-@pytest.fixture
-def db_connection(initialized_db: Path) -> Generator:
-    """
-    Fixture providing a direct database connection.
-
-    For advanced testing that needs direct SQL access.
-
-    Yields:
-        sqlite3.Connection: Database connection
-    """
-    with get_db_connection() as conn:
-        yield conn

@@ -33,8 +33,23 @@ Modern web interface built with FastAPI + HTMX:
 
 ## Installation
 
+### Prerequisites
+
+Before installing, ensure you have:
+
+1. **PostgreSQL 15+ with pgvector extension**
+   - See [POSTGRES_SETUP.md](POSTGRES_SETUP.md) for detailed installation guide
+   - Create database and user for fnord
+   - Enable pgvector extension
+
+2. **LM Studio running with embedding model**
+   - Ensure LM Studio is running locally
+   - Model should be loaded and accessible via API
+
+### Install Dependencies
+
 ```bash
-# Using uv (recommended by Eris herself)
+# Using uv (recommended)
 uv venv
 source .venv/bin/activate
 uv pip install -e ".[dev]"
@@ -42,6 +57,52 @@ uv pip install -e ".[dev]"
 # Or with pip
 pip install -e ".[dev]"
 ```
+
+## Configuration
+
+Create `.env` file from `.env.example`:
+
+```bash
+cp .env.example .env
+# Edit .env with your settings
+```
+
+### Environment Variables
+
+**PostgreSQL Database Configuration:**
+```bash
+FNORD_DB_HOST=localhost
+FNORD_DB_PORT=5432
+FNORD_DB_NAME=fnord
+FNORD_DB_USER=fnord_user
+FNORD_DB_PASSWORD=your_secure_password
+```
+
+**LM Studio Embeddings (for semantic search):**
+```bash
+EMBEDDING_URL=http://127.0.0.1:1338/v1
+EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5-embedding
+EMBEDDING_DIMENSION=768
+```
+
+**Other Configuration:**
+- `FNORD_MCP_NAME`, `FNORD_MCP_VERSION` - MCP server settings
+- `FNORD_WEB_PORT` - Web server port
+- `FNORD_LOG_LEVEL` - Logging level
+
+### Database Setup
+
+After configuring `.env`, initialize the database:
+
+```bash
+# Initialize PostgreSQL schema
+fnord init-db
+```
+
+This will:
+- Create the `fnords` table with vector support
+- Create IVFFlat vector index for fast semantic search
+- Enable pgvector extension
 
 ## Quick Start
 
@@ -52,11 +113,16 @@ fnord web
 
 # Or run directly with uvicorn
 python -m fnord.web
+```
 
-# Visit in browser
-open http://localhost:8000
-```
-```
+Visit: http://localhost:8000
+
+## Features
+
+- **Semantic Search**: Search fnords by meaning, not exact text matching
+- **Vector Embeddings**: Powered by LM Studio local models
+- **Chaos Energy**: 1/23 chance to skip IDs (still sacred!)
+- **Pagination**: Browse fnords in pages of 23
 
 ## Data Model
 
@@ -64,22 +130,70 @@ Each fnord sighting contains:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `when` | ISO8601 datetime | ✅ | When the fnord appeared |
-| `where_place_name` | string or None | ❌ | Location description (whatever you consider location) |
-| `source` | string | ✅ | Where you found it (News, Walk, Code, etc.) |
-| `summary` | string | ✅ | Brief description of the fnord |
-| `notes` | JSON or None | ❌ | Additional metadata (URL, author, etc.) |
+| `when` | TIMESTAMP | ✅ | When the fnord appeared |
+| `where_place_name` | TEXT | ❌ | Location description |
+| `source` | TEXT | ✅ | Where you found it |
+| `summary` | TEXT | ✅ | Brief description |
+| `notes` | JSONB | ❌ | Additional metadata |
+| `logical_fallacies` | JSONB | ❌ | Logical fallacies array |
+| `embedding` | VECTOR(768) | ✅ | Semantic embedding vector |
 
-## Configuration
+## Discordian References
 
-The fnord database location follows this sacred hierarchy:
+This code is blessed by Eris and contains hidden gems:
 
-1. `FNORD_DB_PATH` environment variable (highest priority)
-2. `.env` file's `FNORD_DB_PATH` value
-3. `./fnord.db` (current directory - default)
-4. `~/.config/fnord/fnord.db` (the fnord sanctuary)
+- **23**: The sacred number appears throughout
+- **Fnord**: The invisible word that controls your mind
+- **Law of Fives**: All events are related to the number 5
+- **The Apple**: Sacred symbol of Discordia
+- **Greyface**: Beware his curse of order!
 
-Copy `.env.example` to `.env` and customize as needed.
+## Testing
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=fnord --cov-report=html
+
+# Run specific test file
+pytest tests/test_database.py -v
+```
+
+## Development
+
+```bash
+# Install development dependencies
+uv pip install -e ".[dev]"
+
+# Run linting
+ruff check fnord/ tests/
+
+# Run type checking
+mypy fnord/
+
+# Format code
+ruff format fnord/ tests/
+```
+
+## License
+
+**WTFPL** - Do What The Fuck You Want To Public License
+
+The fnords don't care about licenses. Neither should you.
+
+## Credits
+
+- Inspired by *The Illuminatus! Trilogy* by Robert Shea and Robert Anton Wilson
+- Built for Discordians everywhere
+- May your fnords always be found
+
+---
+
+> **"It is my firm belief that it is a mistake to hold firm beliefs."**
+> — Malaclypse the Younger, Principia Discordia
+
 
 ## Discordian References
 

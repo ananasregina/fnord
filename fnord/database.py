@@ -185,10 +185,14 @@ async def ingest_fnord(fnord: FnordSighting) -> FnordSighting:
                 INSERT INTO fnords (id, "when", where_place_name, source, summary, notes, logical_fallacies, embedding)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             """, target_id, when_dt, fnord.where_place_name, fnord.source, fnord.summary,
-                fnord.notes,
-                fnord.logical_fallacies, embedding)
+                json.dumps(fnord.notes) if fnord.notes else None,
+                json.dumps(fnord.logical_fallacies) if fnord.logical_fallacies else None, embedding)
 
             fnord_id = target_id
+
+            new_max = await conn.fetchval("SELECT COALESCE(MAX(id), 0) FROM fnords")
+            await conn.execute("SELECT setval('fnords_id_seq', $1)", new_max)
+
             logger.info(f"Chaos energy! Skipped to ID: {fnord_id}")
         else:
             # Normal insertion - let PostgreSQL assign the next ID
@@ -200,8 +204,8 @@ async def ingest_fnord(fnord: FnordSighting) -> FnordSighting:
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id
             """, when_dt, fnord.where_place_name, fnord.source, fnord.summary,
-                fnord.notes,
-                fnord.logical_fallacies, embedding)
+                json.dumps(fnord.notes) if fnord.notes else None,
+                json.dumps(fnord.logical_fallacies) if fnord.logical_fallacies else None, embedding)
 
         logger.info(f"Fnord ingested with ID: {fnord_id} - Hail Discordia!")
 
@@ -324,8 +328,8 @@ async def update_fnord(fnord: FnordSighting) -> FnordSighting:
                 notes = $5, logical_fallacies = $6, embedding = $7, updated_at = NOW()
             WHERE id = $8
         """, when_dt, fnord.where_place_name, fnord.source, fnord.summary,
-            fnord.notes,
-            fnord.logical_fallacies, embedding, fnord.id)
+            json.dumps(fnord.notes) if fnord.notes else None,
+            json.dumps(fnord.logical_fallacies) if fnord.logical_fallacies else None, embedding, fnord.id)
 
         logger.info(f"Fnord updated: ID {fnord.id} - The fnord has evolved!")
 
